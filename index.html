@@ -1,0 +1,877 @@
+<title>Golden Hog Hero</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Exo+2:wght@500;600;700;800&family=Be+Vietnam+Pro:wght@400;500;600;700&display=swap">
+<style>
+/* Game-HUD console: top bar (brand + persona switch) + left rail nav frame a main stage that
+   swaps between Hero Dashboard / Quest Board / Leaderboard / Badges / Manager views. The reward
+   bar that drains as a deadline approaches, and the XP/Level bar, are the two recurring motifs
+   that carry the "RPG performance engine" idea through every screen. */
+:root{
+  color-scheme: dark;
+  --bg:#0a0c13; --bg-2:#0d1019;
+  --surface:#131726; --surface-2:#192038; --surface-3:#212a4a;
+  --text:#f2f4fb; --text-2:#b7bdd6; --text-muted:#7b82a3;
+  --border:rgba(255,255,255,0.09); --border-strong:rgba(255,255,255,0.18);
+  --accent:#e8b84b; --accent-ink:#1a1304; --accent-soft:rgba(232,184,75,0.14);
+  --xp:#45d3e6; --power:#ff8a4c;
+  --good:#3ecf6e; --warn:#f5b942; --bad:#ef5959;
+  --q-daily:#3ecf6e; --q-routine:#2dd4bf; --q-assigned:#4f8cff; --q-challenge:#b185f5; --q-boss:#ef5959;
+  --shadow: 0 16px 36px rgba(0,0,0,0.45);
+  --font-display: 'Exo 2', 'Segoe UI', sans-serif;
+  --font-body: 'Be Vietnam Pro', 'Segoe UI', sans-serif;
+}
+@media (prefers-color-scheme: light){
+  :root:not([data-theme="dark"]){
+    color-scheme: light;
+    --bg:#f3f4fa; --bg-2:#eceef7;
+    --surface:#ffffff; --surface-2:#f3f4fb; --surface-3:#e7e9f6;
+    --text:#13162a; --text-2:#454a6b; --text-muted:#787fa0;
+    --border:rgba(15,18,40,0.10); --border-strong:rgba(15,18,40,0.20);
+    --accent:#9a6f10; --accent-ink:#fffaf0; --accent-soft:rgba(154,111,16,0.12);
+    --xp:#0d8fa3; --power:#c2600f;
+    --good:#1f9a4e; --warn:#a56c00; --bad:#c23636;
+    --shadow: 0 10px 26px rgba(20,16,50,0.10);
+  }
+}
+:root[data-theme="light"]{
+  color-scheme: light;
+  --bg:#f3f4fa; --bg-2:#eceef7;
+  --surface:#ffffff; --surface-2:#f3f4fb; --surface-3:#e7e9f6;
+  --text:#13162a; --text-2:#454a6b; --text-muted:#787fa0;
+  --border:rgba(15,18,40,0.10); --border-strong:rgba(15,18,40,0.20);
+  --accent:#9a6f10; --accent-ink:#fffaf0; --accent-soft:rgba(154,111,16,0.12);
+  --xp:#0d8fa3; --power:#c2600f;
+  --good:#1f9a4e; --warn:#a56c00; --bad:#c23636;
+  --shadow: 0 10px 26px rgba(20,16,50,0.10);
+}
+*{box-sizing:border-box}
+body{background:var(--bg);color:var(--text);font-family:var(--font-body);font-size:14px;line-height:1.5;-webkit-font-smoothing:antialiased}
+::selection{background:var(--accent);color:var(--accent-ink)}
+button,select,input{font:inherit;color:inherit}
+button{cursor:pointer}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-radius:4px}
+.tabular{font-variant-numeric:tabular-nums}
+.disp{font-family:var(--font-display)}
+@media (prefers-reduced-motion:reduce){*{animation-duration:.001ms!important;transition-duration:.001ms!important}}
+
+.shell{min-height:100%;display:flex;flex-direction:column}
+.gutter{padding-left:max(16px, env(safe-area-inset-left,0px));padding-right:max(16px, env(safe-area-inset-right,0px))}
+
+/* top bar */
+.topbar{position:sticky;top:env(safe-area-inset-top,0px);z-index:40;display:flex;align-items:center;gap:16px;
+  padding-block:10px;background:var(--surface);border-bottom:1px solid var(--border)}
+.brand{display:flex;align-items:center;gap:9px;flex:0 0 auto}
+.brand-mark{width:32px;height:32px;flex:none}
+.brand-name{font-family:var(--font-display);font-weight:800;font-size:18px;letter-spacing:.3px}
+.brand-tag{font-size:9.5px;color:var(--accent);letter-spacing:1.6px;text-transform:uppercase}
+.demo-pill{font-size:10px;color:var(--text-muted);border:1px solid var(--border-strong);border-radius:999px;padding:3px 9px;white-space:nowrap}
+.topbar-sp{flex:1}
+.persona{display:flex;align-items:center;gap:8px;background:var(--surface-2);border:1px solid var(--border);border-radius:10px;padding:5px 6px 5px 10px}
+.persona label{font-size:10px;color:var(--text-muted)}
+.persona select{background:none;border:none;outline:none;font-size:12.5px;font-weight:600}
+.iconbtn{width:32px;height:32px;border-radius:9px;border:1px solid var(--border);background:var(--surface-2);display:flex;align-items:center;justify-content:center;flex:none}
+.iconbtn svg{width:16px;height:16px}
+
+/* layout */
+.layout{display:grid;grid-template-columns:216px minmax(0,1fr);gap:16px;flex:1;align-items:start;padding-block:16px}
+@media (max-width:860px){.layout{grid-template-columns:1fr}}
+.rail{position:sticky;top:calc(54px + env(safe-area-inset-top,0px));display:flex;flex-direction:column;gap:2px;
+  background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:6px}
+@media (max-width:860px){.rail{position:static;flex-direction:row;overflow-x:auto;scrollbar-width:none}.rail::-webkit-scrollbar{display:none}}
+.rail-item{display:flex;align-items:center;gap:9px;padding:9px 10px;border-radius:9px;background:none;border:none;text-align:left;font-size:13px;color:var(--text-2);white-space:nowrap}
+.rail-item svg{width:16px;height:16px;flex:none;color:var(--text-muted)}
+.rail-item.is-active{background:var(--accent-soft);color:var(--accent)}
+.rail-item.is-active svg{color:var(--accent)}
+.rail-sep{height:1px;background:var(--border);margin:5px 6px}
+
+.stage{min-width:0;display:flex;flex-direction:column;gap:16px}
+.view[hidden]{display:none}
+
+/* cards */
+.card{background:var(--surface);border:1px solid var(--border);border-radius:16px;padding:16px}
+.card-title{font-size:11px;letter-spacing:1px;text-transform:uppercase;color:var(--text-muted);margin-bottom:12px;display:flex;align-items:center;justify-content:space-between}
+
+/* hero header */
+.hero{background:linear-gradient(160deg,var(--surface-2),var(--surface));border:1px solid var(--border-strong);border-radius:18px;padding:18px;position:relative;overflow:hidden}
+.hero::after{content:"";position:absolute;inset:0;background:radial-gradient(420px 220px at 85% -10%, var(--accent-soft), transparent 70%);pointer-events:none}
+.hero-top{display:flex;align-items:flex-start;gap:14px;flex-wrap:wrap}
+.hero-ava{width:64px;height:64px;border-radius:14px;background:linear-gradient(135deg,var(--accent),var(--power));display:flex;align-items:center;justify-content:center;font-family:var(--font-display);font-weight:800;font-size:22px;color:var(--accent-ink);flex:none}
+.hero-id{min-width:0;flex:1}
+.hero-name{font-family:var(--font-display);font-weight:800;font-size:19px}
+.hero-role{font-size:12px;color:var(--text-muted);margin-top:2px}
+.hero-badges{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}
+.lvlpill{display:inline-flex;align-items:center;gap:6px;background:var(--accent-soft);color:var(--accent);border-radius:999px;padding:4px 10px;font-size:11.5px;font-weight:700}
+.rankpill{display:inline-flex;align-items:center;gap:6px;background:var(--surface-3);border-radius:999px;padding:4px 10px;font-size:11.5px;font-weight:600;color:var(--text-2)}
+.combopill{display:inline-flex;align-items:center;gap:5px;background:rgba(239,89,89,.14);color:var(--bad);border-radius:999px;padding:4px 10px;font-size:11.5px;font-weight:700}
+
+.statrow{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-top:16px}
+@media (max-width:640px){.statrow{grid-template-columns:repeat(2,1fr)}}
+.stile{background:var(--surface-2);border:1px solid var(--border);border-radius:12px;padding:10px 12px}
+.stile .l{font-size:10.5px;color:var(--text-muted)}
+.stile .v{font-family:var(--font-display);font-size:19px;font-weight:700;margin-top:2px}
+.stile.power .v{color:var(--power)}
+.stile.kpi .v{color:var(--accent)}
+
+.xpwrap{margin-top:16px}
+.xpwrap .lbl{display:flex;justify-content:space-between;font-size:11.5px;color:var(--text-2);margin-bottom:6px}
+.bartrack{height:12px;border-radius:999px;background:var(--surface-3);overflow:hidden;border:1px solid var(--border)}
+.barfill{height:100%;border-radius:999px;background:linear-gradient(90deg,var(--xp),var(--accent))}
+
+/* quest list */
+.qlist{display:flex;flex-direction:column;gap:9px}
+.qrow{display:grid;grid-template-columns:auto 1fr auto auto;gap:12px;align-items:center;background:var(--surface-2);border:1px solid var(--border);border-radius:12px;padding:10px 12px;text-align:left}
+.qrow:hover{border-color:var(--border-strong)}
+@media (max-width:640px){.qrow{grid-template-columns:auto 1fr;row-gap:6px}.qrow .qreward,.qrow .qstate{grid-column:2}}
+.qtype{width:9px;align-self:stretch;border-radius:4px}
+.qtype.daily{background:var(--q-daily)} .qtype.routine{background:var(--q-routine)} .qtype.assigned{background:var(--q-assigned)} .qtype.challenge{background:var(--q-challenge)} .qtype.boss{background:var(--q-boss)}
+.qmain{min-width:0}
+.qname{font-size:13px;font-weight:600}
+.qmeta{font-size:11px;color:var(--text-muted);margin-top:2px;display:flex;gap:8px;flex-wrap:wrap}
+.qtag{padding:1px 7px;border-radius:999px;background:var(--surface-3);font-size:10px}
+.qreward{font-family:var(--font-display);font-weight:700;font-size:14px;text-align:right;white-space:nowrap}
+.qstate{font-size:10.5px;font-weight:700;padding:4px 9px;border-radius:999px;white-space:nowrap;text-align:center}
+.qstate.st-normal{background:rgba(62,207,110,.14);color:var(--good)}
+.qstate.st-warn{background:rgba(245,185,66,.16);color:var(--warn)}
+.qstate.st-crit{background:rgba(255,138,76,.16);color:var(--power)}
+.qstate.st-over{background:rgba(239,89,89,.16);color:var(--bad)}
+.qstate.st-submitted{background:rgba(177,133,245,.18);color:var(--q-challenge)}
+.qstate.st-done{background:var(--accent-soft);color:var(--accent)}
+
+.filters{display:flex;gap:7px;flex-wrap:wrap}
+.chip{border:1px solid var(--border-strong);background:var(--surface-2);border-radius:999px;padding:6px 12px;font-size:11.5px;color:var(--text-2)}
+.chip.is-active{background:var(--accent);border-color:var(--accent);color:var(--accent-ink);font-weight:700}
+
+/* modal */
+.modal-overlay{position:fixed;inset:0;z-index:200;background:rgba(5,6,12,0.6);display:flex;align-items:center;justify-content:center;padding:18px}
+.modal-overlay[hidden]{display:none}
+.modal-card{background:var(--surface);border:1px solid var(--border-strong);border-radius:18px;padding:18px;width:100%;max-width:440px;max-height:calc(100vh - 40px);overflow:auto;box-shadow:var(--shadow)}
+.modal-card h3{font-family:var(--font-display);font-size:17px;margin:0 0 4px}
+.modal-sub{font-size:11.5px;color:var(--text-muted);margin-bottom:14px}
+.rewardtable{display:flex;flex-direction:column;gap:0;border:1px solid var(--border);border-radius:12px;overflow:hidden;margin-bottom:12px}
+.rewardrow{display:flex;justify-content:space-between;padding:9px 12px;font-size:12.5px;border-bottom:1px solid var(--border)}
+.rewardrow:last-child{border-bottom:none}
+.rewardrow.total{background:var(--accent-soft);font-weight:700;color:var(--accent)}
+.modal-actions{display:flex;justify-content:flex-end;gap:8px;margin-top:14px}
+.btn{display:inline-flex;align-items:center;gap:7px;border-radius:10px;border:1px solid var(--border-strong);background:var(--surface-2);padding:9px 14px;font-size:12.5px;font-weight:700}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:var(--accent-ink)}
+.btn.danger{background:transparent;border-color:var(--bad);color:var(--bad)}
+.btn.good{background:var(--good);border-color:var(--good);color:#06240f}
+.elink{background:none;border:none;padding:0;font:inherit;color:var(--accent);font-weight:600;cursor:pointer;text-decoration:underline;text-decoration-color:transparent;text-underline-offset:2px}
+.elink:hover{text-decoration-color:currentColor}
+
+/* leaderboard */
+.lbtabs{display:flex;gap:6px;overflow-x:auto;scrollbar-width:none;margin-bottom:12px}
+.lbtabs::-webkit-scrollbar{display:none}
+.lbrow{display:grid;grid-template-columns:34px 1fr auto;gap:10px;align-items:center;padding:9px 10px;border-radius:10px;width:100%;background:none;border:none;text-align:left;cursor:pointer}
+.lbrow:hover{background:var(--surface-2)}
+.lbrow.me{background:var(--accent-soft)}
+.lbrow .rk{font-family:var(--font-display);font-weight:800;color:var(--text-muted);text-align:center}
+.lbrow:nth-child(1) .rk{color:#ffd454}
+.lbrow:nth-child(2) .rk{color:#c8ccd8}
+.lbrow:nth-child(3) .rk{color:#d4985c}
+.lbname{font-size:12.5px;font-weight:600}
+.lbrole{font-size:10.5px;color:var(--text-muted)}
+.lbval{font-family:var(--font-display);font-weight:700;font-size:13px;white-space:nowrap}
+
+/* badges */
+.badgegrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:10px}
+.badge{background:var(--surface-2);border:1px solid var(--border);border-radius:14px;padding:12px;text-align:center}
+.badge.locked{opacity:.4}
+.badge .bi{font-size:26px;margin-bottom:6px}
+.badge .bn{font-size:11.5px;font-weight:700}
+.badge .bd{font-size:10px;color:var(--text-muted);margin-top:3px}
+
+/* levels */
+.levelladder{display:flex;flex-direction:column;gap:2px}
+.lvrow{display:grid;grid-template-columns:50px 1fr auto;gap:10px;align-items:center;padding:8px 10px;border-radius:10px}
+.lvrow.current{background:var(--accent-soft)}
+.lvrow.passed{opacity:.55}
+.lvrow .lv{font-family:var(--font-display);font-weight:800;color:var(--accent)}
+.lvrow .lt{font-size:12.5px;font-weight:600}
+.lvrow .lr{font-size:10.5px;color:var(--text-muted)}
+.lvrow .lx{font-size:11px;color:var(--text-muted);text-align:right;white-space:nowrap}
+
+/* boss quest */
+.boss{background:linear-gradient(160deg, rgba(239,89,89,.12), var(--surface));border:1px solid rgba(239,89,89,.3);border-radius:18px;padding:16px}
+.boss-title{display:flex;align-items:center;gap:8px;font-family:var(--font-display);font-weight:800;font-size:15px;color:var(--bad)}
+.boss-goal{font-size:12px;color:var(--text-2);margin-top:4px}
+.depbars{display:flex;flex-direction:column;gap:10px;margin-top:14px}
+.deprow{display:grid;grid-template-columns:100px 1fr 60px;gap:10px;align-items:center;font-size:12px}
+.deptrack{height:10px;border-radius:999px;background:var(--surface-3);overflow:hidden}
+.depfill{height:100%;border-radius:999px;background:var(--bad)}
+
+/* team overview (manager) */
+.teamrow{display:grid;grid-template-columns:1fr auto auto;gap:10px;align-items:center;padding:9px 0;border-bottom:1px solid var(--border)}
+.teamrow:last-child{border-bottom:none}
+.wl{width:64px;height:8px;border-radius:999px;background:var(--surface-3);overflow:hidden}
+.wlfill{height:100%}
+.approverow{display:flex;align-items:center;gap:10px;padding:10px 0;border-bottom:1px solid var(--border)}
+.approverow:last-child{border-bottom:none}
+.approverow .ai{min-width:0;flex:1}
+.approverow .an{font-size:12.5px;font-weight:600}
+.approverow .am{font-size:11px;color:var(--text-muted);margin-top:2px}
+
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+@media (max-width:760px){.grid2{grid-template-columns:1fr}}
+
+.toast{position:fixed;left:50%;bottom:calc(24px + env(safe-area-inset-bottom,0px));transform:translateX(-50%) translateY(10px);background:var(--surface-3);border:1px solid var(--border-strong);color:var(--text);padding:10px 16px;border-radius:999px;font-size:12.5px;box-shadow:var(--shadow);z-index:150;opacity:0;transition:opacity .18s,transform .18s;white-space:nowrap}
+.toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+
+.empty{padding:28px 12px;text-align:center;color:var(--text-muted);font-size:12.5px}
+</style>
+
+<div class="shell">
+  <header class="topbar gutter">
+    <div class="brand">
+      <svg class="brand-mark" viewBox="0 0 32 32" fill="none"><path d="M16 2 4 8v9c0 7 5 11 12 13 7-2 12-6 12-13V8L16 2Z" stroke="var(--accent)" stroke-width="1.6"/><path d="M16 9l2.6 5.3 5.9.9-4.3 4.1 1 5.8-5.2-2.7-5.2 2.7 1-5.8-4.3-4.1 5.9-.9L16 9Z" fill="var(--accent)" fill-opacity=".9"/></svg>
+      <div>
+        <div class="brand-name">GOLDEN HOG <span style="color:var(--accent)">HERO</span></div>
+        <div class="brand-tag">Human Performance RPG</div>
+      </div>
+    </div>
+    <div class="topbar-sp"></div>
+    <span class="demo-pill" id="demoPill">Demo minh hoạ · dữ liệu mẫu</span>
+    <div class="persona">
+      <label>Xem như</label>
+      <select id="personaSel"></select>
+    </div>
+    <button class="iconbtn" id="themeBtn" title="Đổi giao diện sáng / tối"></button>
+  </header>
+
+  <div class="layout gutter">
+    <nav class="rail" id="rail"></nav>
+
+    <main class="stage">
+      <section class="view" id="view-dashboard">
+        <div class="hero" id="heroCard"></div>
+        <div class="grid2">
+          <div class="card">
+            <div class="card-title"><span>Nhiệm vụ hôm nay</span><span id="todayCount"></span></div>
+            <div class="qlist" id="todayQuests"></div>
+          </div>
+          <div class="card">
+            <div class="card-title"><span>Đường lên cấp</span></div>
+            <div class="levelladder" id="levelLadder"></div>
+          </div>
+        </div>
+        <div class="boss" id="bossCard"></div>
+      </section>
+
+      <section class="view" id="view-quests" hidden>
+        <div class="card">
+          <div class="card-title"><span>Toàn bộ nhiệm vụ</span><span id="questCount"></span></div>
+          <div class="filters" id="questFilters" style="margin-bottom:12px"></div>
+          <div class="qlist" id="allQuests"></div>
+        </div>
+      </section>
+
+      <section class="view" id="view-leaderboard" hidden>
+        <div class="card">
+          <div class="card-title"><span>Bảng xếp hạng</span></div>
+          <div class="lbtabs" id="lbTabs"></div>
+          <div id="lbList"></div>
+        </div>
+      </section>
+
+      <section class="view" id="view-badges" hidden>
+        <div class="card">
+          <div class="card-title"><span>Huy hiệu</span><span id="badgeCount"></span></div>
+          <div class="badgegrid" id="badgeGrid"></div>
+        </div>
+      </section>
+
+      <section class="view" id="view-approvals" hidden>
+        <div class="card">
+          <div class="card-title"><span>Báo cáo chờ duyệt</span><span id="pendingCount"></span></div>
+          <div id="approvalList"></div>
+        </div>
+      </section>
+
+      <section class="view" id="view-team" hidden>
+        <div class="grid2">
+          <div class="card">
+            <div class="card-title"><span>Đội ngũ &amp; tải công việc</span></div>
+            <div id="teamList"></div>
+          </div>
+          <div class="card">
+            <div class="card-title"><span>Lực chiến theo Team</span></div>
+            <div id="teamPower"></div>
+          </div>
+        </div>
+      </section>
+    </main>
+  </div>
+</div>
+
+<div class="modal-overlay" id="modalOverlay" hidden>
+  <div class="modal-card" id="modalCard"></div>
+</div>
+<div class="toast" id="toast"></div>
+
+<script>
+(function(){
+"use strict";
+
+function mulberry32(seed){
+  return function(){
+    seed |= 0; seed = seed + 0x6D2B79F5 | 0;
+    let t = Math.imul(seed ^ seed >>> 15, 1 | seed);
+    t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
+    return ((t ^ t >>> 14) >>> 0) / 4294967296;
+  };
+}
+const rnd = mulberry32(20261030);
+const pick = arr => arr[Math.floor(rnd()*arr.length)];
+const intBetween = (a,b) => Math.round(a + rnd()*(b-a));
+
+function svgIcon(name){
+  const I = {
+    dash:'<path d="M4 13h6V4H4v9Zm0 7h6v-5H4v5Zm10 0h6V11h-6v9Zm0-16v5h6V4h-6Z"/>',
+    quest:'<path d="M9 18a6 6 0 1 1 6-6" /><circle cx="15" cy="18" r="1.4"/><path d="M4 4l3 3M20 4l-3 3"/>',
+    rank:'<path d="M4 20h4v-7H4v7Zm6 0h4V8h-4v12Zm6 0h4v-4h-4v4Z"/>',
+    badge:'<circle cx="12" cy="9" r="5.5"/><path d="M8.2 13.6 6 21l6-3 6 3-2.2-7.4"/>',
+    approve:'<rect x="4" y="4" width="16" height="16" rx="3"/><path d="M8 12l2.5 2.5L16 9"/>',
+    team:'<circle cx="8" cy="8" r="3"/><circle cx="17" cy="9" r="2.6"/><path d="M3 20c0-3 2.2-5 5-5s5 2 5 5M14.5 20c.3-2.3 1.8-4 3.8-4.4"/>',
+    sun:'<circle cx="12" cy="12" r="4.4"/><path d="M12 3v2.2M12 18.8V21M4.2 4.2l1.6 1.6M18.2 18.2l1.6 1.6M3 12h2.2M18.8 12H21M4.2 19.8l1.6-1.6M18.2 5.8l1.6-1.6"/>'
+  };
+  return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">'+(I[name]||'')+'</svg>';
+}
+
+/* ---------------- interconnect: 1 cơ chế mở thực thể dùng chung cho toàn trang ----------------
+   data-kind="quest|employee|team|dept|badge" + data-id="..." => openEntity() mở đúng modal.
+   data-view="<tên view>" => chuyển rail sang view đó (vd bấm "Xếp hạng #7" nhảy sang Bảng xếp hạng).
+   Gọi wireInteractive(host) sau MỌI lần set innerHTML có chứa 2 loại thuộc tính trên. */
+let modalStack = [];
+let currentModal = null;
+function openEntity(kind, id, fromModal){
+  const overlay = document.getElementById('modalOverlay');
+  if(fromModal && currentModal && !overlay.hidden) modalStack.push(currentModal);
+  else modalStack = [];
+  if(kind==='quest') openQuestModal(id);
+  else if(kind==='employee') openEmployeeModal(id);
+  else if(kind==='team') openTeamModal(id);
+  else if(kind==='dept') openDeptModal(id);
+  else if(kind==='badge') openBadgeModal(id);
+}
+function modalBack(){
+  const prev = modalStack.pop();
+  if(!prev){ closeModal(); return; }
+  if(prev.kind==='quest') openQuestModal(prev.id);
+  else if(prev.kind==='employee') openEmployeeModal(prev.id);
+  else if(prev.kind==='team') openTeamModal(prev.id);
+  else if(prev.kind==='dept') openDeptModal(prev.id);
+  else if(prev.kind==='badge') openBadgeModal(prev.id);
+}
+function backBtnHtml(){ return modalStack.length ? '<button class="btn" id="mBack">◀ Quay lại</button>' : ''; }
+function wireInteractive(host, opts){
+  if(!host) return;
+  const fromModal = !!(opts && opts.fromModal);
+  host.querySelectorAll('[data-kind]').forEach(el=>{
+    el.addEventListener('click', e=>{ e.stopPropagation(); openEntity(el.getAttribute('data-kind'), el.getAttribute('data-id'), fromModal); });
+    el.addEventListener('keydown', e=>{ if(e.key==='Enter'||e.key===' '){ e.preventDefault(); e.stopPropagation(); openEntity(el.getAttribute('data-kind'), el.getAttribute('data-id'), fromModal); } });
+  });
+  host.querySelectorAll('[data-view]').forEach(el=>{
+    el.addEventListener('click', ()=>{ state.view = el.getAttribute('data-view'); closeModal(); syncViews(); renderAll(); });
+  });
+}
+
+/* ---------------- domain config (from GOLDEN HOG HERO proposal) ---------------- */
+const LEVELS = [
+  {lv:1,xp:0,title:'Tân binh'}, {lv:2,xp:500,title:'Học việc'}, {lv:3,xp:1200,title:'Nhân viên'},
+  {lv:4,xp:2500,title:'Nhân viên chính'}, {lv:5,xp:5000,title:'Chuyên viên'}, {lv:6,xp:8000,title:'Chuyên viên cao cấp'},
+  {lv:7,xp:12000,title:'Trưởng nhóm'}, {lv:8,xp:18000,title:'Quản lý'}, {lv:9,xp:25000,title:'Quản lý cao cấp'}, {lv:10,xp:35000,title:'Master'}
+];
+const LEVEL_PERKS = {1:'Daily Quest cơ bản',2:'Mở Routine Quest',3:'🎁 Phúc lợi cơ bản nâng cao',4:'Nhận Quest độc lập',5:'🎁 Phụ cấp chuyên môn',6:'🎁 Được nhận Quest cấp cao',7:'🎁 Phụ cấp trưởng nhóm',8:'🎁 Quyền tham gia quản lý',9:'🎁 Thưởng thành tích cao cấp',10:'🏆 MASTER — Gói phúc lợi đặc biệt'};
+const BADGES = [
+  {id:'daily', icon:'🏅', name:'Daily Master', desc:'30 ngày liên tục hoàn thành Daily Quest'},
+  {id:'speed', icon:'⚡', name:'Speed Master', desc:'≥95% nhiệm vụ đúng hạn'},
+  {id:'quality', icon:'🎯', name:'Quality Master', desc:'≥95% báo cáo đạt lần đầu'},
+  {id:'profit', icon:'💰', name:'Profit Hunter', desc:'Tạo ra giá trị kinh tế lớn'},
+  {id:'discipline', icon:'🛡️', name:'Discipline Master', desc:'Không vi phạm trong 6 tháng'},
+  {id:'innovator', icon:'🧠', name:'Innovator', desc:'Có sáng kiến được áp dụng'},
+  {id:'farm', icon:'🐷', name:'Farm Master', desc:'Đạt KPI chăn nuôi xuất sắc'},
+  {id:'legend', icon:'👑', name:'Golden Legend', desc:'Đạt đủ điều kiện đặc biệt của công ty'}
+];
+const QTYPE = {
+  daily:{label:'Daily Quest', cls:'daily', dot:'🟢'}, routine:{label:'Routine Quest', cls:'routine', dot:'🔵'},
+  assigned:{label:'Assigned Quest', cls:'assigned', dot:'🔷'}, challenge:{label:'Challenge Quest', cls:'challenge', dot:'🟣'},
+  boss:{label:'Boss Quest', cls:'boss', dot:'🔴'}
+};
+const DEPARTMENTS = ['Sản xuất','Kinh doanh','Kế toán','Mua hàng','Admin'];
+const TITLES = ['Kỹ thuật trại','Kế toán sản xuất','Nhân viên kinh doanh','Nhân viên mua hàng','Quản lý trại','Chuyên viên cao cấp','Trưởng nhóm'];
+const SURNAMES=['Nguyễn','Trần','Lê','Phạm','Hoàng','Vũ','Đặng','Bùi','Đỗ','Hồ'];
+const MIDNAMES=['Văn','Thị','Minh','Hữu','Thành','Ngọc','Quang','Thu'];
+const GIVENNAMES=['A','B','C','D','E','F','G','H','K','L','M','N','P','Q','R','S','T'];
+
+function fmtNum(n){ return Math.round(n).toLocaleString('vi-VN'); }
+function levelForXp(xp){ let cur=LEVELS[0]; for(const l of LEVELS){ if(xp>=l.xp) cur=l; } return cur; }
+function nextLevel(xp){ return LEVELS.find(l=>l.xp>xp) || null; }
+
+/* ---------------- seed teams & employees ---------------- */
+const TEAMS = [
+  {id:'phien', name:'TEAM PHIÊN', power:8200},
+  {id:'duong', name:'TEAM DƯƠNG', power:7950},
+  {id:'trinh', name:'TEAM TRỊNH', power:8560}
+];
+
+const EMPLOYEES = [];
+function genName(){ return SURNAMES[Math.floor(rnd()*SURNAMES.length)]+' '+MIDNAMES[Math.floor(rnd()*MIDNAMES.length)]+' '+GIVENNAMES[Math.floor(rnd()*GIVENNAMES.length)]; }
+function genEmployee(opts){
+  const xp = opts.xp!=null ? opts.xp : intBetween(400,22000);
+  const lvl = levelForXp(xp);
+  const id = 'u'+(EMPLOYEES.length+1);
+  EMPLOYEES.push(Object.assign({
+    id, name: opts.name||genName(), title: opts.title||pick(TITLES), dept: opts.dept||pick(DEPARTMENTS), team: opts.team||null,
+    xp, level: lvl.lv, kpi: opts.kpi!=null?opts.kpi:intBetween(55,98),
+    power: opts.power!=null?opts.power:intBetween(2000,9500),
+    onTime: opts.onTime!=null?opts.onTime:intBetween(70,99),
+    quality: opts.quality!=null?opts.quality:intBetween(70,99),
+    combo: opts.combo!=null?opts.combo:intBetween(0,24),
+    questsDone: opts.questsDone!=null?opts.questsDone:intBetween(20,160),
+    workload: opts.workload!=null?opts.workload:intBetween(35,96),
+    badges: opts.badges || BADGES.filter(()=>rnd()<0.4).map(b=>b.id)
+  }, opts.extra||{}));
+  return EMPLOYEES[EMPLOYEES.length-1];
+}
+
+// canonical example from the proposal doc (section LII) — the demo's "Nguyễn Văn A"
+const ME = genEmployee({ name:'Nguyễn Văn A', title:'Chuyên viên cao cấp', dept:'Sản xuất', team:'phien',
+  xp: 21400, kpi: 92, power: 9125, onTime: 96, quality: 93, combo: 21, questsDone: 148, workload: 78,
+  badges:['daily','speed','quality','discipline','farm','profit'] });
+
+TEAMS.forEach(team=>{
+  const n = team.id==='phien' ? 6 : (team.id==='duong' ? 5 : 6);
+  for(let i=0;i<n;i++) genEmployee({ team:team.id, dept:'Sản xuất', title:pick(['Kỹ thuật trại','Quản lý trại','Nhân viên ATSH','Công nhân chăn nuôi']) });
+});
+['Kinh doanh','Kế toán','Mua hàng','Admin'].forEach(dep=>{
+  const n = intBetween(3,5);
+  for(let i=0;i<n;i++) genEmployee({ dept:dep, title:pick(['Nhân viên kinh doanh','Kế toán sản xuất','Nhân viên mua hàng','Chuyên viên hành chính']) });
+});
+const MANAGER = genEmployee({ name:'Trịnh Văn Quản', title:'Trưởng trại', dept:'Sản xuất', team:'trinh', xp:19800, kpi:88, power:8700, workload:54, badges:['discipline','farm'] });
+
+EMPLOYEES.sort((a,b)=>b.power-a.power);
+EMPLOYEES.forEach((e,i)=> e.rank = i+1);
+
+/* ---------------- quests ---------------- */
+const NOW = new Date();
+function hoursFromNow(h){ return new Date(NOW.getTime()+h*3600*1000); }
+const QUESTS = [];
+let qseq = 100;
+function addQuest(o){ QUESTS.push(Object.assign({ id:'GH2026-'+String(qseq++).padStart(5,'0'), status:'new' }, o)); }
+
+addQuest({ type:'daily', name:'Kiểm tra đàn', owner:ME.id, base:5, due:hoursFromNow(2) });
+addQuest({ type:'daily', name:'Kiểm tra thức ăn & nước', owner:ME.id, base:3, due:hoursFromNow(5) });
+addQuest({ type:'daily', name:'Cập nhật số liệu ATSH', owner:ME.id, base:5, due:hoursFromNow(-1) });
+addQuest({ type:'routine', name:'Báo cáo tuần sản xuất', owner:ME.id, base:40, due:hoursFromNow(20) });
+addQuest({ type:'assigned', name:'Kiểm tra nguyên nhân FCR tăng tại Trại Phiên', owner:ME.id, base:50, due:hoursFromNow(6), from:MANAGER.id });
+addQuest({ type:'challenge', name:'Đề xuất phương án giảm 5% chi phí thức ăn', owner:ME.id, base:200, due:hoursFromNow(48), from:MANAGER.id });
+addQuest({ type:'daily', name:'Báo cáo cuối ngày', owner:ME.id, base:5, due:hoursFromNow(9), status:'submitted' });
+addQuest({ type:'assigned', name:'Rà soát tồn kho thuốc thú y', owner:ME.id, base:30, due:hoursFromNow(-30), status:'submitted' });
+
+EMPLOYEES.filter(e=>e.id!==ME.id).slice(0,5).forEach((e,i)=>{
+  addQuest({ type:pick(['daily','routine','assigned']), name:pick(['Kiểm tra đàn','Báo cáo tuần','Kiểm kê vật tư','Cập nhật ADG']), owner:e.id, base:intBetween(10,60), due:hoursFromNow(intBetween(-10,30)), status: i<3?'submitted':'new' });
+});
+
+function questState(q){
+  if(q.status==='submitted') return {key:'submitted', label:'SUBMITTED — chờ duyệt'};
+  if(q.status==='completed') return {key:'done', label:'COMPLETED'};
+  if(q.status==='returned') return {key:'warn', label:'RETURNED — làm lại'};
+  const hoursLeft = (q.due - NOW)/3600000;
+  if(hoursLeft < 0) return {key:'over', label:'OVERDUE'};
+  if(hoursLeft < 3) return {key:'crit', label:'NEAR DEADLINE'};
+  if(hoursLeft < 12) return {key:'warn', label:'IN PROGRESS'};
+  return {key:'normal', label:'NEW'};
+}
+function rewardNow(q){
+  if(q.status==='submitted'||q.status==='completed') return q.base;
+  const hoursLeft = (q.due - NOW)/3600000;
+  if(hoursLeft < 0){
+    const lateH = -hoursLeft;
+    let penalty = lateH>=48?20:lateH>=24?10:lateH>=12?5:lateH>=2?2:0;
+    return -Math.min(penalty, q.base);
+  }
+  if(hoursLeft < 2) return Math.round(q.base*0.5);
+  if(hoursLeft < 6) return Math.round(q.base*0.75);
+  if(hoursLeft < 12) return Math.round(q.base*0.9);
+  return q.base;
+}
+function dueText(q){
+  const hoursLeft = (q.due - NOW)/3600000;
+  if(q.status==='submitted') return 'Đã nộp — chờ quản lý duyệt';
+  if(q.status==='completed') return 'Đã hoàn thành';
+  if(hoursLeft<0) return 'Trễ '+fmtNum(-hoursLeft)+' giờ';
+  if(hoursLeft<48) return 'Còn '+fmtNum(hoursLeft)+' giờ';
+  return 'Còn '+fmtNum(hoursLeft/24)+' ngày';
+}
+
+/* ---------------- state ---------------- */
+let state = { view:'dashboard', personaId: ME.id, questFilter:'all', lbMetric:'power' };
+function currentPersona(){ return EMPLOYEES.find(e=>e.id===state.personaId) || MANAGER; }
+function isManager(){ return state.personaId===MANAGER.id; }
+
+/* ---------------- nav ---------------- */
+const EMP_RAIL = [
+  {key:'dashboard', label:'Hero Dashboard', icon:'dash'},
+  {key:'quests', label:'Nhiệm vụ', icon:'quest'},
+  {key:'leaderboard', label:'Bảng xếp hạng', icon:'rank'},
+  {key:'badges', label:'Huy hiệu', icon:'badge'}
+];
+const MGR_RAIL = EMP_RAIL.concat([
+  {key:'approvals', label:'Duyệt báo cáo', icon:'approve'},
+  {key:'team', label:'Đội ngũ', icon:'team'}
+]);
+
+function renderRail(){
+  const rail = isManager() ? MGR_RAIL : EMP_RAIL;
+  document.getElementById('rail').innerHTML = rail.map(it=>
+    '<button class="rail-item'+(it.key===state.view?' is-active':'')+'" data-key="'+it.key+'">'+svgIcon(it.icon)+'<span>'+it.label+'</span></button>'
+  ).join('');
+  document.querySelectorAll('.rail-item').forEach(btn=>{
+    btn.addEventListener('click', ()=>{ state.view = btn.getAttribute('data-key'); if(!rail.find(r=>r.key===state.view)) state.view='dashboard'; syncViews(); renderAll(); });
+  });
+}
+function syncViews(){
+  ['dashboard','quests','leaderboard','badges','approvals','team'].forEach(v=>{
+    const el = document.getElementById('view-'+v);
+    if(el) el.hidden = state.view!==v;
+  });
+}
+
+/* ---------------- hero card ---------------- */
+function renderHero(){
+  const p = currentPersona();
+  const lvl = levelForXp(p.xp);
+  const nxt = nextLevel(p.xp);
+  const pct = nxt ? Math.round((p.xp-lvl.xp)/(nxt.xp-lvl.xp)*100) : 100;
+  const initials = p.name.split(' ').slice(-2).map(w=>w[0]).join('').toUpperCase();
+  document.getElementById('heroCard').innerHTML =
+    '<div class="hero-top">'+
+      '<div class="hero-ava">'+initials+'</div>'+
+      '<div class="hero-id">'+
+        '<div class="hero-name">'+p.name+'</div>'+
+        '<div class="hero-role">'+p.title+' · '+(p.team?('<button type="button" class="elink" data-kind="team" data-id="'+p.team+'">'+TEAMS.find(t=>t.id===p.team).name+'</button>'):('<button type="button" class="elink" data-kind="dept" data-id="'+p.dept+'">'+p.dept+'</button>'))+'</div>'+
+        '<div class="hero-badges">'+
+          '<span class="lvlpill">🎖️ LV.'+String(p.level).padStart(2,'0')+' — '+lvl.title.toUpperCase()+'</span>'+
+          '<span class="rankpill" data-view="leaderboard" style="cursor:pointer">🏆 Xếp hạng #'+p.rank+'/'+EMPLOYEES.length+'</span>'+
+          (p.combo>=5?'<span class="combopill">🔥 COMBO '+p.combo+' QUEST</span>':'')+
+        '</div>'+
+      '</div>'+
+    '</div>'+
+    '<div class="statrow">'+
+      '<div class="stile power"><div class="l">⚔️ Lực chiến</div><div class="v tabular">'+fmtNum(p.power)+'</div></div>'+
+      '<div class="stile kpi"><div class="l">🎯 KPI kỳ này</div><div class="v tabular">'+p.kpi+'%</div></div>'+
+      '<div class="stile"><div class="l">⚡ Đúng hạn</div><div class="v tabular">'+p.onTime+'%</div></div>'+
+      '<div class="stile" data-view="badges" style="cursor:pointer"><div class="l">🏅 Huy hiệu</div><div class="v tabular">'+p.badges.length+'/'+BADGES.length+'</div></div>'+
+    '</div>'+
+    '<div class="xpwrap">'+
+      '<div class="lbl"><span>⭐ XP '+fmtNum(p.xp)+(nxt?' / '+fmtNum(nxt.xp):' (MAX)')+'</span><span>'+(nxt?'Còn '+fmtNum(nxt.xp-p.xp)+' XP → Lv.'+nxt.lv:'Đã đạt Master')+'</span></div>'+
+      '<div class="bartrack"><div class="barfill" style="width:'+pct+'%"></div></div>'+
+    '</div>';
+  wireInteractive(document.getElementById('heroCard'));
+}
+
+/* ---------------- quest row + list ---------------- */
+function questRowHtml(q){
+  const emp = EMPLOYEES.find(e=>e.id===q.owner);
+  const st = questState(q);
+  const rv = rewardNow(q);
+  return '<div class="qrow" data-kind="quest" data-id="'+q.id+'" tabindex="0" role="button">'+
+      '<span class="qtype '+QTYPE[q.type].cls+'"></span>'+
+      '<span class="qmain"><span class="qname">'+q.name+'</span>'+
+        '<span class="qmeta"><span class="qtag">'+QTYPE[q.type].label+'</span>'+(isManager()&&emp?('<button type="button" class="elink" data-kind="employee" data-id="'+emp.id+'">'+emp.name+'</button>'):'')+'<span>'+dueText(q)+'</span></span></span>'+
+      '<span class="qreward tabular" style="color:'+(rv<0?'var(--bad)':'inherit')+'">'+(rv>0?'+':'')+rv+' XP</span>'+
+      '<span class="qstate st-'+st.key+'">'+st.label+'</span>'+
+    '</div>';
+}
+function renderTodayQuests(){
+  const list = QUESTS.filter(q=>q.owner===currentPersona().id && q.status!=='completed').sort((a,b)=>a.due-b.due).slice(0,6);
+  document.getElementById('todayCount').textContent = list.length+' nhiệm vụ';
+  document.getElementById('todayQuests').innerHTML = list.length? list.map(questRowHtml).join('') : '<div class="empty">Không còn nhiệm vụ nào đang chờ 🎉</div>';
+  wireInteractive(document.getElementById('todayQuests'));
+}
+function renderAllQuests(){
+  const filters = [{k:'all',label:'Tất cả'}].concat(Object.keys(QTYPE).map(k=>({k,label:QTYPE[k].label})));
+  document.getElementById('questFilters').innerHTML = filters.map(f=>'<button class="chip'+(state.questFilter===f.k?' is-active':'')+'" data-f="'+f.k+'">'+f.label+'</button>').join('');
+  document.querySelectorAll('[data-f]').forEach(b=> b.addEventListener('click', ()=>{ state.questFilter=b.getAttribute('data-f'); renderAllQuests(); }));
+  let list = QUESTS.filter(q=>q.owner===currentPersona().id);
+  if(state.questFilter!=='all') list = list.filter(q=>q.type===state.questFilter);
+  list = list.sort((a,b)=>a.due-b.due);
+  document.getElementById('questCount').textContent = list.length+' nhiệm vụ';
+  document.getElementById('allQuests').innerHTML = list.length? list.map(questRowHtml).join('') : '<div class="empty">Không có nhiệm vụ khớp bộ lọc.</div>';
+  wireInteractive(document.getElementById('allQuests'));
+}
+
+function openQuestModal(qid){
+  const q = QUESTS.find(x=>x.id===qid);
+  currentModal = {kind:'quest', id:qid};
+  const st = questState(q);
+  const base = q.base;
+  const onTimeBonus = Math.round(base*0.1);
+  const qualityBonus = Math.round(base*0.1);
+  const excelBonus = Math.round(base*0.2);
+  const overlay = document.getElementById('modalOverlay');
+  const card = document.getElementById('modalCard');
+  const canSubmit = (st.key==='normal'||st.key==='warn'||st.key==='crit'||st.key==='over') && q.status==='new';
+  const canReview = isManager() && q.status==='submitted';
+  const owner = EMPLOYEES.find(e=>e.id===q.owner);
+  const giver = q.from ? EMPLOYEES.find(e=>e.id===q.from) : null;
+  card.innerHTML =
+    '<h3>'+q.name+'</h3>'+
+    '<div class="modal-sub">'+q.id+' · '+QTYPE[q.type].label+' · '+dueText(q)+'</div>'+
+    (owner?('<div class="modal-sub">👤 Người thực hiện: <button type="button" class="elink" data-kind="employee" data-id="'+owner.id+'">'+owner.name+'</button>'+(giver?(' · Người giao: <button type="button" class="elink" data-kind="employee" data-id="'+giver.id+'">'+giver.name+'</button>'):'')+'</div>'):'')+
+    '<div class="rewardtable">'+
+      '<div class="rewardrow"><span>🎯 KPI/XP cơ bản</span><span class="tabular">'+base+'</span></div>'+
+      '<div class="rewardrow"><span>⚡ Đúng hạn</span><span class="tabular">+'+onTimeBonus+'</span></div>'+
+      '<div class="rewardrow"><span>🎯 Đạt ngay lần đầu</span><span class="tabular">+'+qualityBonus+'</span></div>'+
+      '<div class="rewardrow"><span>⭐ Vượt yêu cầu</span><span class="tabular">+'+excelBonus+'</span></div>'+
+      '<div class="rewardrow total"><span>Tổng tối đa</span><span class="tabular">'+(base+onTimeBonus+qualityBonus+excelBonus)+' XP</span></div>'+
+    '</div>'+
+    (q.status==='submitted' && !canReview ? '<div class="modal-sub">Báo cáo đã gửi, đang chờ quản lý phê duyệt.</div>' : '')+
+    '<div class="modal-actions">'+
+      backBtnHtml()+
+      '<button class="btn" id="mClose">Đóng</button>'+
+      (canSubmit?'<button class="btn primary" id="mSubmit">📨 Nộp báo cáo</button>':'')+
+      (canReview?'<button class="btn danger" id="mReturn">🔄 Trả lại</button><button class="btn good" id="mApprove">✅ Duyệt +'+rewardNow(q)+' XP</button>':'')+
+    '</div>';
+  overlay.hidden = false;
+  document.getElementById('mClose').addEventListener('click', closeModal);
+  const backBtn0 = document.getElementById('mBack');
+  if(backBtn0) backBtn0.addEventListener('click', modalBack);
+  const subBtn = document.getElementById('mSubmit');
+  if(subBtn) subBtn.addEventListener('click', ()=>{ q.status='submitted'; closeModal(); renderAll(); toast('📨 Đã nộp báo cáo — chờ quản lý duyệt.'); });
+  const retBtn = document.getElementById('mReturn');
+  if(retBtn) retBtn.addEventListener('click', ()=>{ q.status='returned'; closeModal(); renderAll(); toast('🔄 Đã trả lại nhiệm vụ.'); });
+  const appBtn = document.getElementById('mApprove');
+  if(appBtn) appBtn.addEventListener('click', ()=>{
+    const gain = rewardNow(q);
+    q.status='completed';
+    const emp = EMPLOYEES.find(e=>e.id===q.owner);
+    if(emp){ emp.xp += gain; emp.level = levelForXp(emp.xp).lv; emp.questsDone++; }
+    closeModal(); renderAll(); toast('✅ Đã duyệt — '+(emp?emp.name:'')+' +'+gain+' XP');
+  });
+  wireInteractive(card, {fromModal:true});
+}
+function closeModal(){ document.getElementById('modalOverlay').hidden = true; modalStack = []; currentModal = null; }
+document.getElementById('modalOverlay').addEventListener('click', e=>{ if(e.target.id==='modalOverlay') closeModal(); });
+
+/* ---------------- entity detail modals (interconnect) ---------------- */
+function openEmployeeModal(id){
+  const e = EMPLOYEES.find(x=>x.id===id);
+  if(!e) return;
+  currentModal = {kind:'employee', id:id};
+  const lvl = levelForXp(e.xp);
+  const overlay = document.getElementById('modalOverlay');
+  const card = document.getElementById('modalCard');
+  card.innerHTML =
+    '<h3>'+e.name+'</h3>'+
+    '<div class="modal-sub">'+e.title+' · '+(e.team?('<button type="button" class="elink" data-kind="team" data-id="'+e.team+'">'+TEAMS.find(t=>t.id===e.team).name+'</button>'):('<button type="button" class="elink" data-kind="dept" data-id="'+e.dept+'">'+e.dept+'</button>'))+'</div>'+
+    '<div class="rewardtable">'+
+      '<div class="rewardrow"><span>🎖️ Level</span><span class="tabular">Lv.'+e.level+' — '+lvl.title+'</span></div>'+
+      '<div class="rewardrow"><span>⚔️ Lực chiến</span><span class="tabular">'+fmtNum(e.power)+'</span></div>'+
+      '<div class="rewardrow"><span>🎯 KPI kỳ này</span><span class="tabular">'+e.kpi+'%</span></div>'+
+      '<div class="rewardrow"><span>⚡ Đúng hạn</span><span class="tabular">'+e.onTime+'%</span></div>'+
+      '<div class="rewardrow"><span>🏆 Xếp hạng</span><span class="tabular">#'+e.rank+'/'+EMPLOYEES.length+'</span></div>'+
+      '<div class="rewardrow"><span>🏅 Huy hiệu</span><span class="tabular">'+e.badges.length+'/'+BADGES.length+'</span></div>'+
+    '</div>'+
+    (e.badges.length? ('<div class="modal-sub" style="margin-bottom:6px">Huy hiệu đã mở:</div><div class="badgegrid">'+e.badges.map(bid=>{ const b=BADGES.find(x=>x.id===bid); return '<button type="button" class="badge" data-kind="badge" data-id="'+b.id+'" style="cursor:pointer"><div class="bi">'+b.icon+'</div><div class="bn">'+b.name+'</div></button>'; }).join('')+'</div>') : '')+
+    '<div class="modal-actions">'+backBtnHtml()+'<button class="btn" id="mClose">Đóng</button></div>';
+  overlay.hidden = false;
+  document.getElementById('mClose').addEventListener('click', closeModal);
+  const backBtn1 = document.getElementById('mBack');
+  if(backBtn1) backBtn1.addEventListener('click', modalBack);
+  wireInteractive(card, {fromModal:true});
+}
+function openTeamModal(id){
+  const t = TEAMS.find(x=>x.id===id);
+  if(!t) return;
+  currentModal = {kind:'team', id:id};
+  const members = EMPLOYEES.filter(e=>e.team===id).sort((a,b)=>b.power-a.power);
+  const overlay = document.getElementById('modalOverlay');
+  const card = document.getElementById('modalCard');
+  card.innerHTML =
+    '<h3>🐷 '+t.name+'</h3>'+
+    '<div class="modal-sub">Lực chiến team: '+fmtNum(t.power)+' · '+members.length+' thành viên</div>'+
+    members.map(m=>'<button type="button" class="teamrow" style="width:100%;background:none;border:none;text-align:left" data-kind="employee" data-id="'+m.id+'"><span>'+m.name+' <span style="color:var(--text-muted);font-size:11px">· '+m.title+'</span></span><span class="tabular" style="font-size:11.5px;color:var(--power)">'+fmtNum(m.power)+'</span><span></span></button>').join('')+
+    '<div class="modal-actions">'+backBtnHtml()+'<button class="btn" id="mClose">Đóng</button></div>';
+  overlay.hidden = false;
+  document.getElementById('mClose').addEventListener('click', closeModal);
+  const backBtn2 = document.getElementById('mBack');
+  if(backBtn2) backBtn2.addEventListener('click', modalBack);
+  wireInteractive(card, {fromModal:true});
+}
+function openDeptModal(name){
+  const members = EMPLOYEES.filter(e=>e.dept===name).sort((a,b)=>b.power-a.power);
+  currentModal = {kind:'dept', id:name};
+  const avgKpi = members.length? Math.round(members.reduce((s,e)=>s+e.kpi,0)/members.length) : 0;
+  const overlay = document.getElementById('modalOverlay');
+  const card = document.getElementById('modalCard');
+  card.innerHTML =
+    '<h3>'+name+'</h3>'+
+    '<div class="modal-sub">'+members.length+' nhân sự · KPI trung bình '+avgKpi+'%</div>'+
+    (members.length? members.map(m=>'<button type="button" class="teamrow" style="width:100%;background:none;border:none;text-align:left" data-kind="employee" data-id="'+m.id+'"><span>'+m.name+' <span style="color:var(--text-muted);font-size:11px">· '+m.title+'</span></span><span class="tabular" style="font-size:11.5px">'+m.kpi+'%</span><span></span></button>').join('') : '<div class="empty">Chưa có nhân sự nào trong phòng này.</div>')+
+    '<div class="modal-actions">'+backBtnHtml()+'<button class="btn" id="mClose">Đóng</button></div>';
+  overlay.hidden = false;
+  document.getElementById('mClose').addEventListener('click', closeModal);
+  const backBtn3 = document.getElementById('mBack');
+  if(backBtn3) backBtn3.addEventListener('click', modalBack);
+  wireInteractive(card, {fromModal:true});
+}
+function openBadgeModal(id){
+  const b = BADGES.find(x=>x.id===id);
+  if(!b) return;
+  currentModal = {kind:'badge', id:id};
+  const earners = EMPLOYEES.filter(e=>e.badges.includes(id)).sort((a,c)=>c.power-a.power);
+  const overlay = document.getElementById('modalOverlay');
+  const card = document.getElementById('modalCard');
+  card.innerHTML =
+    '<h3>'+b.icon+' '+b.name+'</h3>'+
+    '<div class="modal-sub">'+b.desc+' · '+earners.length+' người đã đạt</div>'+
+    (earners.length? earners.map(m=>'<button type="button" class="teamrow" style="width:100%;background:none;border:none;text-align:left" data-kind="employee" data-id="'+m.id+'"><span>'+m.name+'</span><span class="tabular" style="font-size:11.5px">#'+m.rank+'</span><span></span></button>').join('') : '<div class="empty">Chưa có ai đạt huy hiệu này.</div>')+
+    '<div class="modal-actions">'+backBtnHtml()+'<button class="btn" id="mClose">Đóng</button></div>';
+  overlay.hidden = false;
+  document.getElementById('mClose').addEventListener('click', closeModal);
+  const backBtn4 = document.getElementById('mBack');
+  if(backBtn4) backBtn4.addEventListener('click', modalBack);
+  wireInteractive(card, {fromModal:true});
+}
+
+/* ---------------- level ladder ---------------- */
+function renderLevelLadder(){
+  const p = currentPersona();
+  document.getElementById('levelLadder').innerHTML = LEVELS.map(l=>{
+    const cur = l.lv===p.level;
+    const passed = l.xp < levelForXp(p.xp).xp;
+    return '<div class="lvrow'+(cur?' current':passed?' passed':'')+'">'+
+      '<span class="lv">Lv.'+l.lv+'</span>'+
+      '<span><span class="lt">'+l.title+'</span><br><span class="lr">'+(LEVEL_PERKS[l.lv]||'')+'</span></span>'+
+      '<span class="lx tabular">'+fmtNum(l.xp)+' XP</span>'+
+    '</div>';
+  }).join('');
+}
+
+/* ---------------- boss quest ---------------- */
+const BOSS = { name:'TĂNG LỢI NHUẬN THÁNG 10', goal:'+2 tỷ lợi nhuận', deps:[
+  {name:'Kinh doanh', need:500, done:360}, {name:'Sản xuất', need:500, done:410},
+  {name:'Mua hàng', need:300, done:300}, {name:'Kế toán', need:200, done:120}, {name:'Admin', need:100, done:65}
+]};
+function renderBoss(){
+  const totalNeed = BOSS.deps.reduce((s,d)=>s+d.need,0);
+  const totalDone = BOSS.deps.reduce((s,d)=>s+Math.min(d.done,d.need),0);
+  const pct = Math.round(totalDone/totalNeed*100);
+  document.getElementById('bossCard').innerHTML =
+    '<div class="boss-title">🐉 BOSS QUEST — '+BOSS.name+'</div>'+
+    '<div class="boss-goal">Mục tiêu công ty: '+BOSS.goal+' · Tiến độ tổng '+pct+'%'+(pct>=100?' — 🐉 BOSS DEFEATED!':'')+'</div>'+
+    '<div class="depbars">'+BOSS.deps.map(d=>{
+      const p = Math.min(100, Math.round(d.done/d.need*100));
+      return '<div class="deprow"><button type="button" class="elink" data-kind="dept" data-id="'+d.name+'" style="text-align:left">'+d.name+'</button><div class="deptrack"><div class="depfill" style="width:'+p+'%"></div></div><span class="tabular" style="text-align:right">+'+d.done+'/'+d.need+'</span></div>';
+    }).join('')+'</div>';
+  wireInteractive(document.getElementById('bossCard'));
+}
+
+/* ---------------- leaderboard ---------------- */
+const LB_METRICS = [
+  {k:'power', label:'🏆 Top Lực chiến', fmt:e=>fmtNum(e.power)},
+  {k:'onTime', label:'⚡ Top Đúng hạn', fmt:e=>e.onTime+'%'},
+  {k:'quality', label:'🎯 Top Chất lượng', fmt:e=>e.quality+'%'},
+  {k:'questsDone', label:'💰 Top Tạo giá trị', fmt:e=>e.questsDone+' quest'},
+  {k:'combo', label:'🔥 Top Combo', fmt:e=>e.combo+' streak'}
+];
+function renderLeaderboard(){
+  document.getElementById('lbTabs').innerHTML = LB_METRICS.map(m=>'<button class="chip'+(state.lbMetric===m.k?' is-active':'')+'" data-m="'+m.k+'">'+m.label+'</button>').join('');
+  document.querySelectorAll('[data-m]').forEach(b=> b.addEventListener('click', ()=>{ state.lbMetric=b.getAttribute('data-m'); renderLeaderboard(); }));
+  const metric = LB_METRICS.find(m=>m.k===state.lbMetric);
+  const ranked = EMPLOYEES.slice().sort((a,b)=>b[metric.k]-a[metric.k]).slice(0,15);
+  document.getElementById('lbList').innerHTML = ranked.map((e,i)=>
+    '<button type="button" class="lbrow'+(e.id===ME.id?' me':'')+'" data-kind="employee" data-id="'+e.id+'"><span class="rk">#'+(i+1)+'</span>'+
+      '<span><span class="lbname">'+e.name+'</span><br><span class="lbrole">'+e.title+'</span></span>'+
+      '<span class="lbval tabular">'+metric.fmt(e)+'</span></button>'
+  ).join('');
+  wireInteractive(document.getElementById('lbList'));
+}
+
+/* ---------------- badges ---------------- */
+function renderBadges(){
+  const p = currentPersona();
+  document.getElementById('badgeCount').textContent = p.badges.length+'/'+BADGES.length+' đã mở';
+  document.getElementById('badgeGrid').innerHTML = BADGES.map(b=>{
+    const has = p.badges.includes(b.id);
+    return '<button type="button" class="badge'+(has?'':' locked')+'" data-kind="badge" data-id="'+b.id+'" style="cursor:pointer"><div class="bi">'+b.icon+'</div><div class="bn">'+b.name+'</div><div class="bd">'+b.desc+'</div></button>';
+  }).join('');
+  wireInteractive(document.getElementById('badgeGrid'));
+}
+
+/* ---------------- manager: approvals ---------------- */
+function renderApprovals(){
+  const pending = QUESTS.filter(q=>q.status==='submitted');
+  document.getElementById('pendingCount').textContent = pending.length+' báo cáo';
+  document.getElementById('approvalList').innerHTML = pending.length ? pending.map(q=>{
+    const emp = EMPLOYEES.find(e=>e.id===q.owner);
+    return '<div class="approverow"><div class="ai">'+
+        '<button type="button" class="elink an" data-kind="quest" data-id="'+q.id+'" style="display:block;text-align:left">'+q.name+'</button>'+
+        '<div class="am">'+(emp?('<button type="button" class="elink" data-kind="employee" data-id="'+emp.id+'">'+emp.name+'</button>'):'')+' · '+QTYPE[q.type].label+' · '+dueText(q)+'</div></div>'+
+      '<button class="btn" data-kind="quest" data-id="'+q.id+'">Xem & duyệt</button></div>';
+  }).join('') : '<div class="empty">Không có báo cáo nào đang chờ duyệt 🎉</div>';
+  wireInteractive(document.getElementById('approvalList'));
+}
+
+/* ---------------- manager: team ---------------- */
+function renderTeam(){
+  const members = EMPLOYEES.filter(e=>e.id!==MANAGER.id).sort((a,b)=>b.workload-a.workload);
+  document.getElementById('teamList').innerHTML = members.map(e=>{
+    const wlColor = e.workload>90?'var(--bad)':e.workload>70?'var(--warn)':'var(--good)';
+    return '<button type="button" class="teamrow" style="width:100%;background:none;border:none;text-align:left" data-kind="employee" data-id="'+e.id+'"><span>'+e.name+' <span style="color:var(--text-muted);font-size:11px">· '+e.title+'</span></span>'+
+      '<span class="tabular" style="font-size:11.5px;color:var(--text-muted)">'+e.workload+'%</span>'+
+      '<span class="wl"><span class="wlfill" style="width:'+e.workload+'%;background:'+wlColor+'"></span></span></button>';
+  }).join('');
+  document.getElementById('teamPower').innerHTML = TEAMS.map(t=>
+    '<button type="button" class="teamrow" style="width:100%;background:none;border:none;text-align:left" data-kind="team" data-id="'+t.id+'"><span>🐷 '+t.name+'</span><span class="tabular disp" style="font-weight:700">'+fmtNum(t.power)+'</span><span></span></button>'
+  ).join('');
+  wireInteractive(document.getElementById('teamList'));
+  wireInteractive(document.getElementById('teamPower'));
+}
+
+/* ---------------- persona switcher / theme / toast ---------------- */
+function renderPersonaSelect(){
+  const sel = document.getElementById('personaSel');
+  const opts = [ME, MANAGER].concat(EMPLOYEES.filter(e=>e.id!==ME.id && e.id!==MANAGER.id).slice(0,4));
+  sel.innerHTML = opts.map(e=>'<option value="'+e.id+'"'+(e.id===state.personaId?' selected':'')+'>'+e.name+(e.id===MANAGER.id?' (Quản lý)':'')+'</option>').join('');
+  sel.onchange = ()=>{ state.personaId = sel.value; if(!isManager() && (state.view==='approvals'||state.view==='team')) state.view='dashboard'; renderAll(); };
+}
+function currentTheme(){ return document.documentElement.getAttribute('data-theme') || 'auto'; }
+document.getElementById('themeBtn').innerHTML = svgIcon('sun');
+document.getElementById('themeBtn').addEventListener('click', ()=>{
+  const now = document.documentElement.getAttribute('data-theme');
+  const next = now==='dark' ? 'light' : 'dark';
+  document.documentElement.setAttribute('data-theme', next);
+  try{ localStorage.setItem('ghhero-theme', next); }catch(e){}
+});
+(function initTheme(){
+  try{ const saved = localStorage.getItem('ghhero-theme'); if(saved==='dark'||saved==='light') document.documentElement.setAttribute('data-theme', saved); }catch(e){}
+})();
+let toastTimer=null;
+function toast(msg){
+  const el = document.getElementById('toast');
+  el.textContent = msg; el.classList.add('show');
+  clearTimeout(toastTimer); toastTimer = setTimeout(()=> el.classList.remove('show'), 2800);
+}
+
+/* ---------------- render all ---------------- */
+function renderAll(){
+  renderRail();
+  renderPersonaSelect();
+  renderHero();
+  renderTodayQuests();
+  renderLevelLadder();
+  renderBoss();
+  renderAllQuests();
+  renderLeaderboard();
+  renderBadges();
+  renderApprovals();
+  renderTeam();
+}
+
+syncViews();
+renderAll();
+})();
+</script>
