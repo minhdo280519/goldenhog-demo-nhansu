@@ -236,6 +236,7 @@ button{cursor:pointer}
       <label>Xem như</label>
       <select id="personaSel"></select>
     </div>
+    <button class="iconbtn" id="notifBtn" title="Thông báo" style="position:relative">🔔<span id="notifCount" style="position:absolute;top:-4px;right:-4px;background:var(--bad);color:#fff;font-size:9px;border-radius:999px;min-width:14px;height:14px;line-height:14px;text-align:center;padding:0 2px"></span></button>
     <button class="iconbtn" id="themeBtn" title="Đổi giao diện sáng / tối"></button>
     <button class="iconbtn" id="resetBtn" title="Làm lại dữ liệu demo từ đầu">↺</button>
   </header>
@@ -257,6 +258,27 @@ button{cursor:pointer}
           </div>
         </div>
         <div class="boss" id="bossCard"></div>
+      </section>
+
+      <section class="view" id="view-company" hidden>
+        <div class="card">
+          <div class="card-title"><span>🏢 Golden Hog Performance Center</span></div>
+          <div id="companyStats"></div>
+        </div>
+        <div class="grid2">
+          <div class="card">
+            <div class="card-title"><span>Xếp hạng phòng ban</span></div>
+            <div id="companyDeptRank"></div>
+          </div>
+          <div class="card">
+            <div class="card-title"><span>⚠️ Cảnh báo</span></div>
+            <div id="companyAlerts"></div>
+          </div>
+        </div>
+        <div class="card">
+          <div class="card-title"><span>🏆 Top Performer</span></div>
+          <div id="companyTop"></div>
+        </div>
       </section>
 
       <section class="view" id="view-quests" hidden>
@@ -454,6 +476,8 @@ const MANAGER = genEmployee({ name:'Trịnh Văn Quản', title:'Trưởng trạ
 
 EMPLOYEES.sort((a,b)=>b.power-a.power);
 EMPLOYEES.forEach((e,i)=> e.rank = i+1);
+// xếp hạng kỳ trước (mục XXVII.4 "Personal Progress — so với chính mình") — mốc cố định để so sánh, không đổi khi recompute
+EMPLOYEES.forEach(e=>{ e.rankPrev = Math.max(1, Math.min(EMPLOYEES.length, e.rank + intBetween(-15,15))); });
 
 /* ---------------- số liệu nền (lịch sử trước khi dùng hệ thống) — từ đây mọi thao tác thật sẽ cộng dồn lên trên nền này ---------------- */
 EMPLOYEES.forEach(e=>{
@@ -462,10 +486,24 @@ EMPLOYEES.forEach(e=>{
 
 /* ---------------- công thức thật theo đề xuất (mục 3 POWER, mục 10 Combo, mục IV Badge) —
    mỗi nhân viên = nền lịch sử (seedBase) + lịch sử thao tác thật (history) phát sinh khi dùng demo */
-function comboMultiplier(combo){ return 1 + Math.min(3, Math.floor(combo/5))*0.1; }
+// mục XIV đề xuất: 5→×1.05, 10→×1.10, 20→×1.15, 30→×1.20 (trần +20%) — trễ 1 Quest là reset combo
+function comboMultiplier(combo){
+  if(combo>=30) return 1.2;
+  if(combo>=20) return 1.15;
+  if(combo>=10) return 1.1;
+  if(combo>=5) return 1.05;
+  return 1;
+}
 function previewOnTime(q){
   if(q.status==='submitted'||q.status==='support_requested') return q.submittedAt ? (q.submittedAt<=q.due) : true;
   return (q.due-NOW)>=0;
+}
+// mục XV "Perfect Quest": 1★ hoàn thành · 2★ đúng hạn · 3★ đúng hạn + không lỗi (đạt lần đầu) · 4★ vượt yêu cầu · 5★ vượt yêu cầu + đúng hạn + đạt lần đầu
+function starsFor(onTime, firstTry, excel){
+  if(excel) return (onTime && firstTry) ? 5 : 4;
+  if(onTime && firstTry) return 3;
+  if(onTime) return 2;
+  return 1;
 }
 function computeAward(q, emp, onTime, excel){
   const b = q.base;
@@ -480,6 +518,7 @@ function computeAward(q, emp, onTime, excel){
 function recomputeStats(e){
   const sb = e.seedBase;
   const completed = e.history.filter(h=>h.outcome==='completed');
+  const returned = e.history.filter(h=>h.outcome==='returned');
   const liveOnTime = completed.filter(h=>h.onTime).length;
   const liveFirstTry = completed.filter(h=>h.firstTry).length;
   const totalN = sb.questsDone + completed.length;
@@ -492,17 +531,21 @@ function recomputeStats(e){
   const openCount = QUESTS.filter(q=>q.owner===e.id && (q.status==='new'||q.status==='submitted'||q.status==='support_requested')).length;
   const workload = Math.max(0, Math.min(100, sb.workload + openCount*6 - completed.length*2));
   const taskPerf = Math.min(100, Math.round(totalN/1.5));
+  // mục XLVI/XXI: mỗi lần bị trả lại (returned) coi là 1 vi phạm nhỏ, trừ dần điểm Kỷ luật
+  const discipline = Math.max(0, 100 - returned.length*10);
   const badgeSet = new Set(sb.badges);
   if(totalN>=5 && onTimePct>=95) badgeSet.add('speed');
   if(totalN>=5 && qualityPct>=95) badgeSet.add('quality');
   if(combo>=5) badgeSet.add('daily');
   if(completed.some(h=>h.type==='challenge'||h.type==='boss')) badgeSet.add('profit');
   if(sb.kpi>=90) badgeSet.add('farm');
-  if(!e.history.some(h=>h.outcome==='returned')) badgeSet.add('discipline');
+  if(returned.length===0) badgeSet.add('discipline');
   if(badgeSet.size>=7) badgeSet.add('legend');
   const skillPct = Math.min(100, Math.round(badgeSet.size/BADGES.length*100));
   const power = Math.round((0.3*taskPerf + 0.2*onTimePct + 0.2*qualityPct + 0.2*sb.kpi + 0.1*skillPct) * 100);
-  Object.assign(e, { xp, level:lvl.lv, kpi:sb.kpi, onTime:onTimePct, quality:qualityPct, combo, questsDone:totalN, workload, power, badges:Array.from(badgeSet) });
+  // mục XX "KPI tháng" — công thức RIÊNG, khác Power: 40% hoàn thành việc + 20% đúng hạn + 20% chất lượng + 20% kết quả (sb.kpi dùng làm gốc "kết quả" vì demo chưa nối số liệu sản xuất/tài chính thật)
+  const kpiMonth = Math.round(0.4*taskPerf + 0.2*onTimePct + 0.2*qualityPct + 0.2*sb.kpi);
+  Object.assign(e, { xp, level:lvl.lv, kpi:kpiMonth, onTime:onTimePct, quality:qualityPct, combo, questsDone:totalN, workload, power, discipline, badges:Array.from(badgeSet) });
 }
 function teamScore(teamId){
   const members = EMPLOYEES.filter(e=>e.team===teamId);
@@ -538,7 +581,16 @@ const NOW = new Date();
 function hoursFromNow(h){ return new Date(NOW.getTime()+h*3600*1000); }
 const QUESTS = [];
 let qseq = 100;
-function addQuest(o){ QUESTS.push(Object.assign({ id:'GH2026-'+String(qseq++).padStart(5,'0'), status:'new' }, o)); }
+function addQuest(o){ QUESTS.push(Object.assign({ id:'GH2026-'+String(qseq++).padStart(5,'0'), status:'new', createdAt:NOW, log:[], reportVersion:1 }, o)); }
+// mục VI.16 "Lịch sử thao tác" — mọi hành động quan trọng trên 1 Quest phải lưu lại, không xoá dấu vết (mục XXXII)
+function logQ(q, msg){ q.log = q.log||[]; q.log.unshift({ msg, ts:new Date().toISOString() }); }
+// mục IX: trạng thái thời gian tính theo % THỜI GIAN CÒN LẠI so với tổng thời hạn của Quest (không dùng giờ tuyệt đối)
+// — để 1 Quest hạn 2 giờ (daily) và 1 Quest hạn 10 ngày (boss) cùng tuân 1 thang đo công bằng như nhau.
+function timeFrac(q, atTime){
+  const total = q.due - q.createdAt;
+  if(total<=0) return 0;
+  return Math.max(0, Math.min(1, (q.due - atTime)/total));
+}
 
 addQuest({ type:'daily', name:'Kiểm tra đàn', owner:ME.id, base:5, due:hoursFromNow(2) });
 addQuest({ type:'daily', name:'Kiểm tra thức ăn & nước', owner:ME.id, base:3, due:hoursFromNow(5) });
@@ -561,8 +613,9 @@ function questState(q){
   if(q.status==='returned') return {key:'warn', label:'RETURNED — làm lại'};
   const hoursLeft = (q.due - NOW)/3600000;
   if(hoursLeft < 0) return {key:'over', label:'OVERDUE'};
-  if(hoursLeft < 3) return {key:'crit', label:'NEAR DEADLINE'};
-  if(hoursLeft < 12) return {key:'warn', label:'IN PROGRESS'};
+  const frac = timeFrac(q, NOW);
+  if(frac < 0.1) return {key:'crit', label:'NEAR DEADLINE'};   // mục IX: CRITICAL — còn dưới 10% thời gian
+  if(frac < 0.3) return {key:'warn', label:'IN PROGRESS'};      // mục IX: WARNING — còn dưới 30% thời gian
   return {key:'normal', label:'NEW'};
 }
 function rewardNow(q){
@@ -575,9 +628,10 @@ function rewardNow(q){
     let penalty = lateH>=48?20:lateH>=24?10:lateH>=12?5:lateH>=2?2:0;
     return -Math.min(penalty, q.base);
   }
-  if(hoursLeft < 2) return Math.round(q.base*0.5);
-  if(hoursLeft < 6) return Math.round(q.base*0.75);
-  if(hoursLeft < 12) return Math.round(q.base*0.9);
+  // mục X: còn <10% thời gian → 75%; còn <30% → 90%; còn nhiều thời gian → 100% — tính theo % thời gian còn lại, không theo giờ tuyệt đối
+  const frac = timeFrac(q, refTime);
+  if(frac < 0.1) return Math.round(q.base*0.75);
+  if(frac < 0.3) return Math.round(q.base*0.9);
   return q.base;
 }
 function dueText(q){
@@ -590,10 +644,14 @@ function dueText(q){
   return 'Còn '+fmtNum(hoursLeft/24)+' ngày';
 }
 
+// mục XXXV "Dashboard Ban lãnh đạo" — persona riêng, KHÔNG đưa vào EMPLOYEES (không cạnh tranh xếp hạng cá nhân)
+const LEADER = { id:'leader1', name:'Ban Giám Đốc', title:'Ban lãnh đạo Golden Hog', dept:null, team:null, badges:[] };
+
 /* ---------------- state ---------------- */
 let state = { view:'dashboard', personaId: ME.id, questFilter:'all', lbMetric:'power' };
-function currentPersona(){ return EMPLOYEES.find(e=>e.id===state.personaId) || MANAGER; }
+function currentPersona(){ if(state.personaId===LEADER.id) return LEADER; return EMPLOYEES.find(e=>e.id===state.personaId) || MANAGER; }
 function isManager(){ return state.personaId===MANAGER.id; }
+function isLeader(){ return state.personaId===LEADER.id; }
 
 /* ---------------- nav ---------------- */
 const EMP_RAIL = [
@@ -606,18 +664,22 @@ const MGR_RAIL = EMP_RAIL.concat([
   {key:'approvals', label:'Duyệt báo cáo', icon:'approve'},
   {key:'team', label:'Đội ngũ', icon:'team'}
 ]);
+const LEAD_RAIL = [
+  {key:'company', label:'Performance Center', icon:'dash'},
+  {key:'leaderboard', label:'Bảng xếp hạng', icon:'rank'}
+];
 
 function renderRail(){
-  const rail = isManager() ? MGR_RAIL : EMP_RAIL;
+  const rail = isLeader() ? LEAD_RAIL : isManager() ? MGR_RAIL : EMP_RAIL;
   document.getElementById('rail').innerHTML = rail.map(it=>
     '<button class="rail-item'+(it.key===state.view?' is-active':'')+'" data-key="'+it.key+'">'+svgIcon(it.icon)+'<span>'+it.label+'</span></button>'
   ).join('');
   document.querySelectorAll('.rail-item').forEach(btn=>{
-    btn.addEventListener('click', ()=>{ state.view = btn.getAttribute('data-key'); if(!rail.find(r=>r.key===state.view)) state.view='dashboard'; syncViews(); renderAll(); });
+    btn.addEventListener('click', ()=>{ state.view = btn.getAttribute('data-key'); if(!rail.find(r=>r.key===state.view)) state.view=isLeader()?'company':'dashboard'; syncViews(); renderAll(); });
   });
 }
 function syncViews(){
-  ['dashboard','quests','leaderboard','badges','approvals','team'].forEach(v=>{
+  ['dashboard','quests','leaderboard','badges','approvals','team','company'].forEach(v=>{
     const el = document.getElementById('view-'+v);
     if(el) el.hidden = state.view!==v;
   });
@@ -639,7 +701,8 @@ function renderHero(){
         '<div class="hero-badges">'+
           '<span class="lvlpill">🎖️ LV.'+String(p.level).padStart(2,'0')+' — '+lvl.title.toUpperCase()+'</span>'+
           '<span class="rankpill" data-view="leaderboard" style="cursor:pointer">🏆 Xếp hạng #'+p.rank+'/'+EMPLOYEES.length+'</span>'+
-          (p.combo>=5?'<span class="combopill">🔥 COMBO '+p.combo+' QUEST</span>':'')+
+          (p.rankPrev!=null ? '<span class="rankpill">'+(p.rank<p.rankPrev?'📈 ':p.rank>p.rankPrev?'📉 ':'➖ ')+'Kỳ trước #'+p.rankPrev+(p.rank!==p.rankPrev?(' → #'+p.rank+' ('+(p.rankPrev-p.rank>0?'↑':'↓')+Math.abs(p.rankPrev-p.rank)+' bậc)'):'')+'</span>' : '')+
+          (p.combo>=30?'<span class="combopill">🏆 PERFECT STREAK ('+p.combo+')</span>':p.combo>=5?'<span class="combopill">🔥 COMBO '+p.combo+' QUEST ×'+comboMultiplier(p.combo).toFixed(2)+'</span>':'')+
         '</div>'+
       '</div>'+
     '</div>'+
@@ -665,7 +728,7 @@ function questRowHtml(q){
       '<span class="qtype '+QTYPE[q.type].cls+'"></span>'+
       '<span class="qmain"><span class="qname">'+q.name+'</span>'+
         '<span class="qmeta"><span class="qtag">'+QTYPE[q.type].label+'</span>'+(isManager()&&emp?('<button type="button" class="elink" data-kind="employee" data-id="'+emp.id+'">'+emp.name+'</button>'):'')+'<span>'+dueText(q)+'</span></span></span>'+
-      '<span class="qreward tabular" style="color:'+(rv<0?'var(--bad)':'inherit')+'">'+(rv>0?'+':'')+rv+' XP</span>'+
+      '<span class="qreward tabular" style="color:'+(rv<0?'var(--bad)':'inherit')+'">'+(q.status==='completed'&&q.stars?('⭐'.repeat(q.stars)+' '):'')+(rv>0?'+':'')+rv+' XP</span>'+
       '<span class="qstate st-'+st.key+'">'+st.label+'</span>'+
     '</div>';
 }
@@ -743,8 +806,12 @@ function renderQuestModalBody(q, mode){
     '</div>'+
     (q.status==='submitted' && !canReview ? '<div class="modal-sub">Báo cáo đã gửi, đang chờ quản lý phê duyệt.</div>' : '')+
     (q.wasReturned && q.status!=='completed' ? '<div class="modal-sub" style="color:var(--warn)">Nhiệm vụ này đã từng bị trả lại — không còn tính "đạt ngay lần đầu".</div>' : '')+
+    ((q.reportVersion||1)>1 ? '<div class="modal-sub">📄 Phiên bản báo cáo: v'+q.reportVersion+' (đã nộp lại sau khi bị trả)</div>' : '')+
+    (q.status==='completed' && q.stars ? '<div class="modal-sub">'+'⭐'.repeat(q.stars)+' Perfect Quest '+q.stars+'/5</div>' : '')+
     (canReview ? '<label class="modal-sub" style="display:flex;align-items:center;gap:6px;cursor:pointer"><input type="checkbox" id="mExcel"> ⭐ Vượt yêu cầu / có sáng kiến (+20% điểm cơ bản)</label>' : '')+
     extra+
+    ((q.log&&q.log.length) ? ('<details style="margin-top:10px"><summary class="modal-sub" style="cursor:pointer">🕓 Lịch sử thao tác ('+q.log.length+')</summary>'+
+      '<div style="margin-top:6px;display:flex;flex-direction:column;gap:4px">'+q.log.map(l=>'<div style="font-size:11px;color:var(--text-muted)">'+new Date(l.ts).toLocaleString('vi-VN')+' — '+esc2(l.msg)+'</div>').join('')+'</div></details>') : '')+
     '<div class="modal-actions">'+
       (!mode ? backBtnHtml() : '')+
       (!mode ? '<button class="btn" id="mClose">Đóng</button>' : '')+
@@ -762,35 +829,56 @@ function renderQuestModalBody(q, mode){
   bind('mClose2', ()=>reRender(null));
   const backBtn0 = document.getElementById('mBack');
   if(backBtn0) backBtn0.addEventListener('click', modalBack);
-  bind('mSubmit', ()=>{ q.status='submitted'; q.submittedAt=new Date(); q.protected=false; saveState(); closeModal(); renderAll(); toast('📨 Đã nộp báo cáo — chờ quản lý duyệt.'); });
+  bind('mSubmit', ()=>{
+    if(q.wasReturned) q.reportVersion = (q.reportVersion||1)+1;
+    q.status='submitted'; q.submittedAt=new Date(); q.protected=false;
+    logQ(q, 'Nộp báo cáo (v'+(q.reportVersion||1)+')');
+    saveState(); closeModal(); renderAll(); notify('📨 Đã nộp báo cáo — chờ quản lý duyệt.');
+  });
   bind('mAskSupport', ()=>reRender('support-compose'));
   bind('mSendSupport', ()=>{
     const ta = document.getElementById('mSupportReason');
     q.supportReason = (ta && ta.value.trim()) || 'Cần hỗ trợ để hoàn thành đúng hạn.';
     q.status='support_requested'; q.supportAskedAt=new Date();
-    saveState(); closeModal(); renderAll(); toast('🆘 Đã gửi yêu cầu hỗ trợ tới quản lý.');
+    logQ(q, 'Xin hỗ trợ: "'+q.supportReason+'"');
+    saveState(); closeModal(); renderAll(); notify('🆘 Đã gửi yêu cầu hỗ trợ tới quản lý.');
   });
-  bind('mReturn', ()=>{ q.status='returned'; q.wasReturned=true; saveState(); closeModal(); renderAll(); toast('🔄 Đã trả lại nhiệm vụ.'); });
+  bind('mReturn', ()=>{
+    q.status='returned'; q.wasReturned=true;
+    logQ(q, 'Quản lý trả lại — cần bổ sung');
+    const emp = EMPLOYEES.find(e=>e.id===q.owner);
+    if(emp){ emp.history.push({ qid:q.id, type:q.type, outcome:'returned', ts:new Date().toISOString() }); recomputeAll(); }
+    saveState(); closeModal(); renderAll(); notify('🔄 Quest Returned — "'+q.name+'" cần bổ sung.');
+  });
   bind('mApprove', ()=>{
     const emp = EMPLOYEES.find(e=>e.id===q.owner);
     const onTime = previewOnTime(q);
     const excelChk = document.getElementById('mExcel');
     const excel = !!(excelChk && excelChk.checked);
     const gain = computeAward(q, emp, onTime, excel);
-    q.status='completed'; q.resolvedAt=new Date(); q.excel=excel;
-    if(emp){ emp.history.push({ qid:q.id, type:q.type, outcome:'completed', onTime, firstTry:!q.wasReturned, xpGained:gain, ts:new Date().toISOString() }); recomputeAll(); }
-    saveState(); closeModal(); renderAll(); toast('✅ Đã duyệt — '+(emp?emp.name:'')+' '+(gain>=0?'+':'')+gain+' XP'+(onTime && emp && comboMultiplier(emp.combo)>1 ? ' (có Combo 🔥)':''));
+    const firstTry = !q.wasReturned;
+    const stars = starsFor(onTime, firstTry, excel);
+    q.status='completed'; q.resolvedAt=new Date(); q.excel=excel; q.stars=stars;
+    logQ(q, 'Quản lý duyệt — '+(gain>=0?'+':'')+gain+' XP, '+stars+'★');
+    const prevLevel = emp ? emp.level : null;
+    const prevBadges = emp ? emp.badges.slice() : [];
+    if(emp){ emp.history.push({ qid:q.id, type:q.type, outcome:'completed', onTime, firstTry, stars, xpGained:gain, ts:new Date().toISOString() }); recomputeAll(); }
+    saveState(); closeModal(); renderAll();
+    notify('✅ Quest Completed — '+(emp?emp.name:'')+' '+(gain>=0?'+':'')+gain+' XP'+(onTime && emp && comboMultiplier(emp.combo)>1 ? ' (có Combo 🔥)':''));
+    if(emp && emp.level>prevLevel) notify('🆙 '+emp.name+' LÊN LEVEL '+emp.level+'!');
+    if(emp) emp.badges.forEach(bid=>{ if(!prevBadges.includes(bid)){ const b=BADGES.find(x=>x.id===bid); notify('🏆 '+emp.name+' đạt huy hiệu mới: '+(b?b.icon+' '+b.name:bid)); } });
   });
   bind('mRsvExtend', ()=>reRender('resolve:extend'));
   bind('mRsvReassign', ()=>reRender('resolve:reassign'));
   bind('mRsvHelper', ()=>reRender('resolve:helper'));
-  bind('mExt24', ()=>{ q.due=new Date(q.due.getTime()+24*3600000); q.status='new'; q.protected=true; saveState(); closeModal(); renderAll(); toast('⏳ Đã gia hạn 24 giờ — không bị phạt.'); });
-  bind('mExt48', ()=>{ q.due=new Date(q.due.getTime()+48*3600000); q.status='new'; q.protected=true; saveState(); closeModal(); renderAll(); toast('⏳ Đã gia hạn 48 giờ — không bị phạt.'); });
+  bind('mExt24', ()=>{ q.due=new Date(q.due.getTime()+24*3600000); q.status='new'; q.protected=true; logQ(q,'Quản lý gia hạn +24 giờ'); saveState(); closeModal(); renderAll(); notify('⏳ Đã gia hạn 24 giờ — không bị phạt.'); });
+  bind('mExt48', ()=>{ q.due=new Date(q.due.getTime()+48*3600000); q.status='new'; q.protected=true; logQ(q,'Quản lý gia hạn +48 giờ'); saveState(); closeModal(); renderAll(); notify('⏳ Đã gia hạn 48 giờ — không bị phạt.'); });
   bind('mConfirmPick', ()=>{
     const sel = document.getElementById('mPickEmp');
     const pickId = sel && sel.value;
-    if(mode==='resolve:reassign'){ if(pickId) q.owner = pickId; q.status='new'; q.protected=true; saveState(); closeModal(); renderAll(); toast('🔁 Đã chuyển nhiệm vụ — không bị phạt.'); }
-    else { q.helperId = pickId; q.status='new'; q.protected=true; saveState(); closeModal(); renderAll(); toast('🤝 Đã thêm người hỗ trợ — không bị phạt.'); }
+    const pickName = (EMPLOYEES.find(e=>e.id===pickId)||{}).name||'';
+    if(mode==='resolve:reassign'){ logQ(q,'Quản lý chuyển nhiệm vụ cho '+pickName); if(pickId) q.owner = pickId; q.status='new'; q.protected=true; recomputeAll(); saveState(); closeModal(); renderAll(); notify('🔁 Đã chuyển nhiệm vụ — không bị phạt.'); }
+    else { logQ(q,'Quản lý thêm người hỗ trợ: '+pickName); q.helperId = pickId; q.status='new'; q.protected=true; saveState(); closeModal(); renderAll(); notify('🤝 Đã thêm người hỗ trợ — không bị phạt.'); }
   });
   wireInteractive(card, {fromModal:true});
 }
@@ -913,23 +1001,35 @@ function renderBoss(){
 }
 
 /* ---------------- leaderboard ---------------- */
+// mục 15 "Bảng xếp hạng phải có nhiều loại" — mỗi người có một con đường để được ghi nhận
 const LB_METRICS = [
   {k:'power', label:'🏆 Top Lực chiến', fmt:e=>fmtNum(e.power)},
   {k:'onTime', label:'⚡ Top Đúng hạn', fmt:e=>e.onTime+'%'},
   {k:'quality', label:'🎯 Top Chất lượng', fmt:e=>e.quality+'%'},
   {k:'questsDone', label:'💰 Top Tạo giá trị', fmt:e=>e.questsDone+' quest'},
-  {k:'combo', label:'🔥 Top Combo', fmt:e=>e.combo+' streak'}
+  {k:'combo', label:'🔥 Top Tăng trưởng', fmt:e=>e.combo+' streak'},
+  {k:'discipline', label:'🛡️ Top Kỷ luật', fmt:e=>e.discipline+'%'},
+  {k:'team', label:'🏅 Top Team', fmt:null}
 ];
 function renderLeaderboard(){
   document.getElementById('lbTabs').innerHTML = LB_METRICS.map(m=>'<button class="chip'+(state.lbMetric===m.k?' is-active':'')+'" data-m="'+m.k+'">'+m.label+'</button>').join('');
   document.querySelectorAll('[data-m]').forEach(b=> b.addEventListener('click', ()=>{ state.lbMetric=b.getAttribute('data-m'); renderLeaderboard(); }));
   const metric = LB_METRICS.find(m=>m.k===state.lbMetric);
-  const ranked = EMPLOYEES.slice().sort((a,b)=>b[metric.k]-a[metric.k]).slice(0,15);
-  document.getElementById('lbList').innerHTML = ranked.map((e,i)=>
-    '<button type="button" class="lbrow'+(e.id===ME.id?' me':'')+'" data-kind="employee" data-id="'+e.id+'"><span class="rk">#'+(i+1)+'</span>'+
-      '<span><span class="lbname">'+e.name+'</span><br><span class="lbrole">'+e.title+'</span></span>'+
-      '<span class="lbval tabular">'+metric.fmt(e)+'</span></button>'
-  ).join('');
+  if(metric.k==='team'){
+    const rankedT = TEAMS.slice().sort((a,b)=>(b.score||0)-(a.score||0));
+    document.getElementById('lbList').innerHTML = rankedT.map((t,i)=>
+      '<button type="button" class="lbrow" data-kind="team" data-id="'+t.id+'"><span class="rk">#'+(i+1)+'</span>'+
+        '<span><span class="lbname">🐷 '+t.name+'</span><br><span class="lbrole">Lực chiến '+fmtNum(t.power)+'</span></span>'+
+        '<span class="lbval tabular">Score '+(t.score!=null?t.score:'—')+'/100</span></button>'
+    ).join('');
+  } else {
+    const ranked = EMPLOYEES.slice().sort((a,b)=>b[metric.k]-a[metric.k]).slice(0,15);
+    document.getElementById('lbList').innerHTML = ranked.map((e,i)=>
+      '<button type="button" class="lbrow'+(e.id===ME.id?' me':'')+'" data-kind="employee" data-id="'+e.id+'"><span class="rk">#'+(i+1)+'</span>'+
+        '<span><span class="lbname">'+e.name+'</span><br><span class="lbrole">'+e.title+'</span></span>'+
+        '<span class="lbval tabular">'+metric.fmt(e)+'</span></button>'
+    ).join('');
+  }
   wireInteractive(document.getElementById('lbList'));
 }
 
@@ -945,15 +1045,22 @@ function renderBadges(){
 }
 
 /* ---------------- manager: approvals ---------------- */
+// mục LIV "Quản lý cũng phải có Quest": duyệt báo cáo trong 4 giờ, quá hạn thì tính là Manager SLA breach
+const MANAGER_SLA_HOURS = 4;
 function renderApprovals(){
   const pending = QUESTS.filter(q=>q.status==='submitted'||q.status==='support_requested');
-  document.getElementById('pendingCount').textContent = pending.length+' việc cần xử lý';
+  const breached = pending.filter(q=> q.submittedAt && (NOW-q.submittedAt)/3600000 > MANAGER_SLA_HOURS);
+  document.getElementById('pendingCount').textContent = pending.length+' việc cần xử lý'+(breached.length?(' · ⚠️ '+breached.length+' quá SLA '+MANAGER_SLA_HOURS+'h'):'');
   document.getElementById('approvalList').innerHTML = pending.length ? pending.map(q=>{
     const emp = EMPLOYEES.find(e=>e.id===q.owner);
     const isSupport = q.status==='support_requested';
+    const waitH = q.submittedAt ? (NOW-q.submittedAt)/3600000 : 0;
+    const slaBad = waitH > MANAGER_SLA_HOURS;
     return '<div class="approverow"><div class="ai">'+
         '<button type="button" class="elink an" data-kind="quest" data-id="'+q.id+'" style="display:block;text-align:left">'+(isSupport?'🆘 ':'')+q.name+'</button>'+
-        '<div class="am">'+(emp?('<button type="button" class="elink" data-kind="employee" data-id="'+emp.id+'">'+emp.name+'</button>'):'')+' · '+QTYPE[q.type].label+' · '+(isSupport?('xin hỗ trợ: "'+esc2(q.supportReason||'')+'"'):dueText(q))+'</div></div>'+
+        '<div class="am">'+(emp?('<button type="button" class="elink" data-kind="employee" data-id="'+emp.id+'">'+emp.name+'</button>'):'')+' · '+QTYPE[q.type].label+' · '+(isSupport?('xin hỗ trợ: "'+esc2(q.supportReason||'')+'"'):dueText(q))+
+          (q.submittedAt?(' · <span style="color:'+(slaBad?'var(--bad)':'var(--text-muted)')+'">chờ duyệt '+fmtNum(waitH)+'h'+(slaBad?' — quá SLA':'')+'</span>'):'')+
+        '</div></div>'+
       '<button class="btn" data-kind="quest" data-id="'+q.id+'">'+(isSupport?'Xử lý yêu cầu':'Xem & duyệt')+'</button></div>';
   }).join('') : '<div class="empty">Không có việc nào đang chờ xử lý 🎉</div>';
   wireInteractive(document.getElementById('approvalList'));
@@ -1028,16 +1135,21 @@ function renderAssignQuestBody(draft){
     if(!nm){ toast('⚠️ Nhập tên nhiệm vụ trước đã.'); return; }
     addQuest({ type:ty, name:nm, owner:own, base, due:hoursFromNow(hrs), from:MANAGER.id });
     recomputeAll(); saveState(); closeModal(); renderAll();
-    toast('➕ Đã giao nhiệm vụ "'+nm+'" cho '+(EMPLOYEES.find(e=>e.id===own)||{}).name+'.');
+    notify('🎯 Quest mới: "'+nm+'" giao cho '+(EMPLOYEES.find(e=>e.id===own)||{}).name+'.');
   });
 }
 
 /* ---------------- persona switcher / theme / toast ---------------- */
 function renderPersonaSelect(){
   const sel = document.getElementById('personaSel');
-  const opts = [ME, MANAGER].concat(EMPLOYEES.filter(e=>e.id!==ME.id && e.id!==MANAGER.id).slice(0,4));
-  sel.innerHTML = opts.map(e=>'<option value="'+e.id+'"'+(e.id===state.personaId?' selected':'')+'>'+e.name+(e.id===MANAGER.id?' (Quản lý)':'')+'</option>').join('');
-  sel.onchange = ()=>{ state.personaId = sel.value; if(!isManager() && (state.view==='approvals'||state.view==='team')) state.view='dashboard'; saveState(); renderAll(); };
+  const opts = [ME, MANAGER, LEADER].concat(EMPLOYEES.filter(e=>e.id!==ME.id && e.id!==MANAGER.id).slice(0,4));
+  sel.innerHTML = opts.map(e=>'<option value="'+e.id+'"'+(e.id===state.personaId?' selected':'')+'>'+e.name+(e.id===MANAGER.id?' (Quản lý)':e.id===LEADER.id?' (Ban giám đốc)':'')+'</option>').join('');
+  sel.onchange = ()=>{
+    state.personaId = sel.value;
+    if(isLeader()) state.view='company';
+    else if(!isManager() && (state.view==='approvals'||state.view==='team'||state.view==='company')) state.view='dashboard';
+    saveState(); syncViews(); renderAll();
+  };
 }
 function currentTheme(){ return document.documentElement.getAttribute('data-theme') || 'auto'; }
 document.getElementById('themeBtn').innerHTML = svgIcon('sun');
@@ -1061,6 +1173,27 @@ function toast(msg){
   el.textContent = msg; el.classList.add('show');
   clearTimeout(toastTimer); toastTimer = setTimeout(()=> el.classList.remove('show'), 2800);
 }
+// mục XXXVI "Hệ thống thông báo" — danh sách trong phiên làm việc (demo trình duyệt, không gửi email/mobile thật)
+const NOTIFS = [];
+function notify(msg){
+  toast(msg);
+  NOTIFS.unshift({ msg, ts:new Date().toISOString() });
+  if(NOTIFS.length>60) NOTIFS.length = 60;
+  const badge = document.getElementById('notifCount');
+  if(badge) badge.textContent = NOTIFS.length ? String(Math.min(NOTIFS.length,99)) : '';
+}
+function openNotifModal(){
+  const overlay = document.getElementById('modalOverlay');
+  const card = document.getElementById('modalCard');
+  currentModal = null; modalStack = [];
+  card.innerHTML = '<h3>🔔 Thông báo</h3>'+
+    '<div class="modal-sub">Các sự kiện trong phiên làm việc này (giao việc, sắp hết hạn không áp dụng ở bản demo tĩnh, được duyệt, trả lại, lên Level, đạt Huy hiệu...)</div>'+
+    (NOTIFS.length ? '<div style="display:flex;flex-direction:column;gap:7px;max-height:50vh;overflow:auto">'+NOTIFS.map(n=>'<div style="font-size:12.5px;padding:8px 10px;background:var(--surface-2);border-radius:10px"><div>'+esc2(n.msg)+'</div><div style="font-size:10.5px;color:var(--text-muted);margin-top:2px">'+new Date(n.ts).toLocaleString('vi-VN')+'</div></div>').join('')+'</div>' : '<div class="empty">Chưa có thông báo nào.</div>')+
+    '<div class="modal-actions"><button class="btn" id="mClose">Đóng</button></div>';
+  overlay.hidden = false;
+  document.getElementById('mClose').addEventListener('click', closeModal);
+}
+document.getElementById('notifBtn').addEventListener('click', openNotifModal);
 
 /* ---------------- lưu tiến trình thật (localStorage — mỗi trình duyệt giữ riêng) ---------------- */
 const STORE_KEY = 'ghhero-state-v3';
@@ -1069,6 +1202,7 @@ function serializeState(){
     personaId: state.personaId, qseq,
     quests: QUESTS.map(q=>Object.assign({}, q, {
       due: q.due.toISOString(),
+      createdAt: q.createdAt ? q.createdAt.toISOString() : null,
       submittedAt: q.submittedAt ? q.submittedAt.toISOString() : null,
       resolvedAt: q.resolvedAt ? q.resolvedAt.toISOString() : null,
       supportAskedAt: q.supportAskedAt ? q.supportAskedAt.toISOString() : null
@@ -1088,6 +1222,7 @@ function loadState(){
     QUESTS.length = 0;
     d.quests.forEach(q=> QUESTS.push(Object.assign({}, q, {
       due: new Date(q.due),
+      createdAt: q.createdAt ? new Date(q.createdAt) : NOW,
       submittedAt: q.submittedAt ? new Date(q.submittedAt) : null,
       resolvedAt: q.resolvedAt ? new Date(q.resolvedAt) : null,
       supportAskedAt: q.supportAskedAt ? new Date(q.supportAskedAt) : null
@@ -1099,13 +1234,65 @@ function loadState(){
   }catch(e){ return false; }
 }
 
+/* ---------------- mục XXXV: Dashboard Ban lãnh đạo — tổng công ty, drill-down Công ty → Phòng → Team → Nhân viên ---------------- */
+function renderCompanyDashboard(){
+  const n = EMPLOYEES.length;
+  const avg = k => Math.round(EMPLOYEES.reduce((s,e)=>s+e[k],0)/n);
+  const totalPower = EMPLOYEES.reduce((s,e)=>s+e.power,0);
+  const overdueCount = QUESTS.filter(q=>q.status!=='completed' && questState(q).key==='over').length;
+  const pendingCount = QUESTS.filter(q=>q.status==='submitted'||q.status==='support_requested').length;
+  const totalQ = Math.max(1, QUESTS.length);
+  const completedPct = Math.round(QUESTS.filter(q=>q.status==='completed').length / totalQ * 100);
+  const overduePct = Math.round(overdueCount/totalQ*100);
+  function tile(l,v){ return '<div class="stile"><div class="l">'+l+'</div><div class="v tabular">'+v+'</div></div>'; }
+  document.getElementById('companyStats').innerHTML =
+    '<div class="statrow" style="grid-template-columns:repeat(4,1fr)">'+
+      tile('🎯 KPI công ty', avg('kpi')+'%')+tile('⚔️ Power tổng', fmtNum(totalPower))+
+      tile('✅ Hoàn thành', completedPct+'%')+tile('🔴 Quá hạn', overduePct+'%')+
+    '</div>'+
+    '<div class="statrow" style="grid-template-columns:repeat(3,1fr);margin-top:10px">'+
+      tile('⚡ Đúng hạn TB', avg('onTime')+'%')+tile('🎯 Chất lượng TB', avg('quality')+'%')+tile('🟠 Đang chờ duyệt', pendingCount+' việc')+
+    '</div>';
+
+  const byDept = DEPARTMENTS.map(d=>{
+    const members = EMPLOYEES.filter(e=>e.dept===d);
+    const avgPower = members.length? Math.round(members.reduce((s,e)=>s+e.power,0)/members.length):0;
+    const avgKpiD = members.length? Math.round(members.reduce((s,e)=>s+e.kpi,0)/members.length):0;
+    return {d, avgPower, avgKpiD, n:members.length};
+  }).sort((a,b)=>b.avgPower-a.avgPower);
+  document.getElementById('companyDeptRank').innerHTML = byDept.map((x,i)=>
+    '<button type="button" class="teamrow" style="width:100%;background:none;border:none;text-align:left" data-kind="dept" data-id="'+x.d+'"><span>#'+(i+1)+' '+x.d+' <span style="color:var(--text-muted);font-size:11px">· '+x.n+' người · KPI '+x.avgKpiD+'%</span></span><span class="tabular" style="font-weight:700">'+fmtNum(x.avgPower)+'</span><span></span></button>'
+  ).join('');
+
+  const highLoad = EMPLOYEES.filter(e=>e.workload>90).length;
+  const lowKpiDept = byDept.filter(x=>x.n && x.avgKpiD<70).length;
+  const alerts = [];
+  if(overdueCount) alerts.push('🔴 '+overdueCount+' nhiệm vụ quá hạn');
+  if(pendingCount) alerts.push('🟠 '+pendingCount+' báo cáo đang chờ duyệt');
+  if(highLoad) alerts.push('🟡 '+highLoad+' nhân viên workload &gt;90%');
+  if(lowKpiDept) alerts.push('🔴 '+lowKpiDept+' phòng có KPI &lt;70%');
+  document.getElementById('companyAlerts').innerHTML = alerts.length ? alerts.map(a=>'<div class="modal-sub" style="font-size:12.5px;margin-bottom:6px">'+a+'</div>').join('') : '<div class="empty">Không có cảnh báo nào 🎉</div>';
+
+  const top5 = EMPLOYEES.slice(0,5);
+  document.getElementById('companyTop').innerHTML = top5.map((e,i)=>
+    '<button type="button" class="teamrow" style="width:100%;background:none;border:none;text-align:left" data-kind="employee" data-id="'+e.id+'"><span>#'+(i+1)+' '+e.name+' <span style="color:var(--text-muted);font-size:11px">· '+e.dept+'</span></span><span class="tabular" style="font-weight:700;color:var(--power)">'+fmtNum(e.power)+'</span><span></span></button>'
+  ).join('');
+
+  wireInteractive(document.getElementById('companyDeptRank'));
+  wireInteractive(document.getElementById('companyTop'));
+}
+
 /* ---------------- render all ---------------- */
 function renderAll(){
   renderRail();
   renderPersonaSelect();
-  renderHero();
-  renderTodayQuests();
-  renderLevelLadder();
+  if(isLeader()){
+    renderCompanyDashboard();
+  } else {
+    renderHero();
+    renderTodayQuests();
+    renderLevelLadder();
+  }
   renderBoss();
   renderAllQuests();
   renderLeaderboard();
