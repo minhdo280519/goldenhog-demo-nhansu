@@ -348,6 +348,23 @@ const rnd = mulberry32(20261030);
 const pick = arr => arr[Math.floor(rnd()*arr.length)];
 const intBetween = (a,b) => Math.round(a + rnd()*(b-a));
 
+/* ---------------- mục XLI/LVII "Rule Engine" — Ban giám đốc đổi được chính sách mà KHÔNG cần sửa code ----------------
+   Toàn bộ số "cứng" (combo, giảm thưởng theo thời gian, mức phạt trễ, SLA quản lý, khung điểm theo loại Quest)
+   nằm trong 1 chỗ CONFIG, đọc/ghi qua localStorage — các hàm công thức phía dưới đều đọc từ đây, không hard-code. */
+const CONFIG_KEY = 'ghhero-config-v1';
+const DEFAULT_CONFIG = {
+  comboTiers: [{n:5,m:1.05},{n:10,m:1.10},{n:20,m:1.15},{n:30,m:1.20}],
+  decay: { warnFrac:0.3, critFrac:0.1, warnMult:0.9, critMult:0.75 },
+  latePenalty: [{h:2,p:2},{h:12,p:5},{h:24,p:10},{h:48,p:20}],
+  managerSlaHours: 4,
+  qtypeRange: { daily:[5,20], routine:[20,50], assigned:[50,150], challenge:[150,500], boss:[500,5000] }
+};
+let CONFIG = JSON.parse(JSON.stringify(DEFAULT_CONFIG));
+function loadConfig(){
+  try{ const raw = localStorage.getItem(CONFIG_KEY); if(raw){ const d = JSON.parse(raw); CONFIG = Object.assign({}, DEFAULT_CONFIG, d); } }catch(e){}
+}
+function saveConfig(){ try{ localStorage.setItem(CONFIG_KEY, JSON.stringify(CONFIG)); }catch(e){} }
+
 function svgIcon(name){
   const I = {
     dash:'<path d="M4 13h6V4H4v9Zm0 7h6v-5H4v5Zm10 0h6V11h-6v9Zm0-16v5h6V4h-6Z"/>',
@@ -487,11 +504,10 @@ EMPLOYEES.forEach(e=>{
 /* ---------------- công thức thật theo đề xuất (mục 3 POWER, mục 10 Combo, mục IV Badge) —
    mỗi nhân viên = nền lịch sử (seedBase) + lịch sử thao tác thật (history) phát sinh khi dùng demo */
 // mục XIV đề xuất: 5→×1.05, 10→×1.10, 20→×1.15, 30→×1.20 (trần +20%) — trễ 1 Quest là reset combo
+// Đọc từ CONFIG.comboTiers (Ban giám đốc đổi được qua ⚙️ Cấu hình hệ thống, không cần sửa code)
 function comboMultiplier(combo){
-  if(combo>=30) return 1.2;
-  if(combo>=20) return 1.15;
-  if(combo>=10) return 1.1;
-  if(combo>=5) return 1.05;
+  const tiers = (CONFIG.comboTiers||DEFAULT_CONFIG.comboTiers).slice().sort((a,b)=>b.n-a.n);
+  for(const t of tiers){ if(combo>=t.n) return t.m; }
   return 1;
 }
 function previewOnTime(q){
@@ -504,6 +520,13 @@ function starsFor(onTime, firstTry, excel){
   if(onTime && firstTry) return 3;
   if(onTime) return 2;
   return 1;
+}
+// Nguyên tắc 4 + mục XIX "Chống cày KPI": 1 Quest nhỏ (daily) không được tính ngang 1 Quest lớn (boss) trong Task Performance —
+// trọng số theo khung điểm của từng loại (so với mức giữa của Assigned Quest làm gốc), lấy từ CONFIG nên Admin đổi khung điểm là đổi luôn trọng số.
+function taskWeight(type){
+  const r = (CONFIG.qtypeRange||DEFAULT_CONFIG.qtypeRange)[type] || [50,150];
+  const base = (CONFIG.qtypeRange||DEFAULT_CONFIG.qtypeRange).assigned || [50,150];
+  return ((r[0]+r[1])/2) / ((base[0]+base[1])/2);
 }
 function computeAward(q, emp, onTime, excel){
   const b = q.base;
@@ -530,7 +553,10 @@ function recomputeStats(e){
   const lvl = levelForXp(xp);
   const openCount = QUESTS.filter(q=>q.owner===e.id && (q.status==='new'||q.status==='submitted'||q.status==='support_requested')).length;
   const workload = Math.max(0, Math.min(100, sb.workload + openCount*6 - completed.length*2));
-  const taskPerf = Math.min(100, Math.round(totalN/1.5));
+  // taskPerf tính theo TRỌNG SỐ giá trị việc (không phải đếm đầu việc) — làm 1 Boss Quest không thể bị 1 Daily Quest "cày" cho ngang bằng
+  const liveWeighted = completed.reduce((s,h)=>s+taskWeight(h.type),0);
+  const totalWeighted = sb.questsDone*1 + liveWeighted; // nền lịch sử cũ không có chi tiết loại → coi trọng số 1 (ngang Assigned Quest)
+  const taskPerf = Math.min(100, Math.round(totalWeighted/1.5));
   // mục XLVI/XXI: mỗi lần bị trả lại (returned) coi là 1 vi phạm nhỏ, trừ dần điểm Kỷ luật
   const discipline = Math.max(0, 100 - returned.length*10);
   const badgeSet = new Set(sb.badges);
@@ -581,7 +607,7 @@ const NOW = new Date();
 function hoursFromNow(h){ return new Date(NOW.getTime()+h*3600*1000); }
 const QUESTS = [];
 let qseq = 100;
-function addQuest(o){ QUESTS.push(Object.assign({ id:'GH2026-'+String(qseq++).padStart(5,'0'), status:'new', createdAt:NOW, log:[], reportVersion:1 }, o)); }
+function addQuest(o){ QUESTS.push(Object.assign({ id:'GH2026-'+String(qseq++).padStart(5,'0'), status:'new', createdAt:NOW, log:[], reportVersion:1, reportVersions:[] }, o)); }
 // mục VI.16 "Lịch sử thao tác" — mọi hành động quan trọng trên 1 Quest phải lưu lại, không xoá dấu vết (mục XXXII)
 function logQ(q, msg){ q.log = q.log||[]; q.log.unshift({ msg, ts:new Date().toISOString() }); }
 // mục IX: trạng thái thời gian tính theo % THỜI GIAN CÒN LẠI so với tổng thời hạn của Quest (không dùng giờ tuyệt đối)
@@ -590,6 +616,42 @@ function timeFrac(q, atTime){
   const total = q.due - q.createdAt;
   if(total<=0) return 0;
   return Math.max(0, Math.min(1, (q.due - atTime)/total));
+}
+
+/* ---------------- mục XVI/XVII "Job Template" — hệ thống TỰ SINH Daily Quest theo chức danh, không chờ quản lý giao ----------------
+   Bản demo không có server/cron thật nên "mỗi ngày" ở đây = mỗi lần mở lại trang vào 1 ngày lịch mới (theo giờ máy người xem). */
+const JOB_TEMPLATES = {
+  'Kỹ thuật trại': [
+    {name:'Kiểm tra đàn', type:'daily', base:5, hour:6.5},
+    {name:'Kiểm tra nước/thức ăn', type:'daily', base:5, hour:9},
+    {name:'Kiểm tra sức khỏe đàn', type:'daily', base:5, hour:14},
+    {name:'Báo cáo cuối ngày', type:'daily', base:10, hour:17}
+  ],
+  'Chuyên viên cao cấp': [
+    {name:'Duyệt số liệu đầu ca', type:'daily', base:5, hour:7},
+    {name:'Kiểm tra KPI nhóm', type:'daily', base:8, hour:8}
+  ],
+  'Trưởng trại': [
+    {name:'Duyệt báo cáo kỹ thuật trong ngày', type:'daily', base:10, hour:18}
+  ]
+};
+function todayStr(){ return NOW.getFullYear()+'-'+String(NOW.getMonth()+1).padStart(2,'0')+'-'+String(NOW.getDate()).padStart(2,'0'); }
+function nextOccurrence(hour){
+  const d = new Date(NOW);
+  d.setHours(Math.floor(hour), Math.round((hour%1)*60), 0, 0);
+  if(d<=NOW) d.setDate(d.getDate()+1);
+  return d;
+}
+function genDailyQuestsForDate(dateStr){
+  EMPLOYEES.forEach(e=>{
+    const tmpl = JOB_TEMPLATES[e.title];
+    if(!tmpl) return;
+    tmpl.forEach(t=>{
+      const already = QUESTS.some(q=>q.jobTemplate && q.owner===e.id && q.tmplName===t.name && q.genDate===dateStr);
+      if(already) return;
+      addQuest({ type:t.type, name:t.name, owner:e.id, base:t.base, due:nextOccurrence(t.hour), jobTemplate:true, tmplName:t.name, genDate:dateStr });
+    });
+  });
 }
 
 addQuest({ type:'daily', name:'Kiểm tra đàn', owner:ME.id, base:5, due:hoursFromNow(2) });
@@ -614,9 +676,15 @@ function questState(q){
   const hoursLeft = (q.due - NOW)/3600000;
   if(hoursLeft < 0) return {key:'over', label:'OVERDUE'};
   const frac = timeFrac(q, NOW);
-  if(frac < 0.1) return {key:'crit', label:'NEAR DEADLINE'};   // mục IX: CRITICAL — còn dưới 10% thời gian
-  if(frac < 0.3) return {key:'warn', label:'IN PROGRESS'};      // mục IX: WARNING — còn dưới 30% thời gian
+  const dc = CONFIG.decay||DEFAULT_CONFIG.decay;
+  if(frac < dc.critFrac) return {key:'crit', label:'NEAR DEADLINE'};   // mục IX: CRITICAL — còn dưới X% thời gian (Admin cấu hình)
+  if(frac < dc.warnFrac) return {key:'warn', label:'IN PROGRESS'};      // mục IX: WARNING — còn dưới X% thời gian
   return {key:'normal', label:'NEW'};
+}
+function latePenaltyFor(lateH, base){
+  const tiers = (CONFIG.latePenalty||DEFAULT_CONFIG.latePenalty).slice().sort((a,b)=>b.h-a.h);
+  for(const t of tiers){ if(lateH>=t.h) return -Math.min(t.p, base); }
+  return 0;
 }
 function rewardNow(q){
   if(q.status==='completed') return q.base;
@@ -624,14 +692,13 @@ function rewardNow(q){
   const hoursLeft = (q.due - refTime)/3600000;
   if(hoursLeft < 0){
     if(q.protected) return 0;
-    const lateH = -hoursLeft;
-    let penalty = lateH>=48?20:lateH>=24?10:lateH>=12?5:lateH>=2?2:0;
-    return -Math.min(penalty, q.base);
+    return latePenaltyFor(-hoursLeft, q.base);
   }
-  // mục X: còn <10% thời gian → 75%; còn <30% → 90%; còn nhiều thời gian → 100% — tính theo % thời gian còn lại, không theo giờ tuyệt đối
+  // mục X: còn ít thời gian → giảm % thưởng — tính theo % thời gian còn lại, không theo giờ tuyệt đối. Ngưỡng/mức % lấy từ CONFIG.
   const frac = timeFrac(q, refTime);
-  if(frac < 0.1) return Math.round(q.base*0.75);
-  if(frac < 0.3) return Math.round(q.base*0.9);
+  const dc = CONFIG.decay||DEFAULT_CONFIG.decay;
+  if(frac < dc.critFrac) return Math.round(q.base*dc.critMult);
+  if(frac < dc.warnFrac) return Math.round(q.base*dc.warnMult);
   return q.base;
 }
 function dueText(q){
@@ -727,7 +794,7 @@ function questRowHtml(q){
   return '<div class="qrow" data-kind="quest" data-id="'+q.id+'" tabindex="0" role="button">'+
       '<span class="qtype '+QTYPE[q.type].cls+'"></span>'+
       '<span class="qmain"><span class="qname">'+q.name+'</span>'+
-        '<span class="qmeta"><span class="qtag">'+QTYPE[q.type].label+'</span>'+(isManager()&&emp?('<button type="button" class="elink" data-kind="employee" data-id="'+emp.id+'">'+emp.name+'</button>'):'')+'<span>'+dueText(q)+'</span></span></span>'+
+        '<span class="qmeta"><span class="qtag">'+QTYPE[q.type].label+'</span>'+(q.jobTemplate?'<span class="qtag" title="Hệ thống tự sinh theo chức danh, không chờ quản lý giao">🔁 Tự sinh</span>':'')+(isManager()&&emp?('<button type="button" class="elink" data-kind="employee" data-id="'+emp.id+'">'+emp.name+'</button>'):'')+'<span>'+dueText(q)+'</span></span></span>'+
       '<span class="qreward tabular" style="color:'+(rv<0?'var(--bad)':'inherit')+'">'+(q.status==='completed'&&q.stars?('⭐'.repeat(q.stars)+' '):'')+(rv>0?'+':'')+rv+' XP</span>'+
       '<span class="qstate st-'+st.key+'">'+st.label+'</span>'+
     '</div>';
@@ -806,11 +873,14 @@ function renderQuestModalBody(q, mode){
     '</div>'+
     (q.status==='submitted' && !canReview ? '<div class="modal-sub">Báo cáo đã gửi, đang chờ quản lý phê duyệt.</div>' : '')+
     (q.wasReturned && q.status!=='completed' ? '<div class="modal-sub" style="color:var(--warn)">Nhiệm vụ này đã từng bị trả lại — không còn tính "đạt ngay lần đầu".</div>' : '')+
-    ((q.reportVersion||1)>1 ? '<div class="modal-sub">📄 Phiên bản báo cáo: v'+q.reportVersion+' (đã nộp lại sau khi bị trả)</div>' : '')+
     (q.status==='completed' && q.stars ? '<div class="modal-sub">'+'⭐'.repeat(q.stars)+' Perfect Quest '+q.stars+'/5</div>' : '')+
     (canReview ? '<label class="modal-sub" style="display:flex;align-items:center;gap:6px;cursor:pointer"><input type="checkbox" id="mExcel"> ⭐ Vượt yêu cầu / có sáng kiến (+20% điểm cơ bản)</label>' : '')+
+    (!mode && canSubmit ? ('<div class="modal-sub" style="margin-top:4px">📝 Nội dung báo cáo (số liệu, tình trạng...)</div>'+
+      '<textarea id="mReportContent" rows="3" style="width:100%;background:var(--surface-2);border:1px solid var(--border);border-radius:10px;color:var(--text);padding:8px;font:inherit;margin-top:4px" placeholder="Ví dụ: đàn 450 con, chết 2, ăn uống bình thường..."></textarea>') : '')+
     extra+
-    ((q.log&&q.log.length) ? ('<details style="margin-top:10px"><summary class="modal-sub" style="cursor:pointer">🕓 Lịch sử thao tác ('+q.log.length+')</summary>'+
+    ((q.reportVersions&&q.reportVersions.length) ? ('<details style="margin-top:10px"><summary class="modal-sub" style="cursor:pointer">📄 Báo cáo đã nộp ('+q.reportVersions.length+' phiên bản — mục XI "Version 1→2→3")</summary>'+
+      '<div style="margin-top:6px;display:flex;flex-direction:column;gap:6px">'+q.reportVersions.map(v=>'<div style="font-size:11.5px;background:var(--surface-2);border-radius:8px;padding:6px 8px"><b>v'+v.v+'</b> · '+new Date(v.ts).toLocaleString('vi-VN')+'<br>'+(v.content?esc2(v.content):'<i style="color:var(--text-muted)">(không nhập nội dung)</i>')+'</div>').join('')+'</div></details>') : '')+
+    ((q.log&&q.log.length) ? ('<details style="margin-top:8px"><summary class="modal-sub" style="cursor:pointer">🕓 Lịch sử thao tác ('+q.log.length+')</summary>'+
       '<div style="margin-top:6px;display:flex;flex-direction:column;gap:4px">'+q.log.map(l=>'<div style="font-size:11px;color:var(--text-muted)">'+new Date(l.ts).toLocaleString('vi-VN')+' — '+esc2(l.msg)+'</div>').join('')+'</div></details>') : '')+
     '<div class="modal-actions">'+
       (!mode ? backBtnHtml() : '')+
@@ -830,7 +900,11 @@ function renderQuestModalBody(q, mode){
   const backBtn0 = document.getElementById('mBack');
   if(backBtn0) backBtn0.addEventListener('click', modalBack);
   bind('mSubmit', ()=>{
+    const taEl = document.getElementById('mReportContent');
+    const content = taEl ? taEl.value.trim() : '';
     if(q.wasReturned) q.reportVersion = (q.reportVersion||1)+1;
+    q.reportVersions = q.reportVersions||[];
+    q.reportVersions.push({ v:q.reportVersion||1, content, ts:new Date().toISOString() });
     q.status='submitted'; q.submittedAt=new Date(); q.protected=false;
     logQ(q, 'Nộp báo cáo (v'+(q.reportVersion||1)+')');
     saveState(); closeModal(); renderAll(); notify('📨 Đã nộp báo cáo — chờ quản lý duyệt.');
@@ -871,14 +945,20 @@ function renderQuestModalBody(q, mode){
   bind('mRsvExtend', ()=>reRender('resolve:extend'));
   bind('mRsvReassign', ()=>reRender('resolve:reassign'));
   bind('mRsvHelper', ()=>reRender('resolve:helper'));
-  bind('mExt24', ()=>{ q.due=new Date(q.due.getTime()+24*3600000); q.status='new'; q.protected=true; logQ(q,'Quản lý gia hạn +24 giờ'); saveState(); closeModal(); renderAll(); notify('⏳ Đã gia hạn 24 giờ — không bị phạt.'); });
-  bind('mExt48', ()=>{ q.due=new Date(q.due.getTime()+48*3600000); q.status='new'; q.protected=true; logQ(q,'Quản lý gia hạn +48 giờ'); saveState(); closeModal(); renderAll(); notify('⏳ Đã gia hạn 48 giờ — không bị phạt.'); });
+  bind('mExt24', ()=>{ const oldDue=q.due; q.due=new Date(q.due.getTime()+24*3600000); q.status='new'; q.protected=true; logQ(q,'Quản lý gia hạn +24 giờ (hạn cũ: '+oldDue.toLocaleString('vi-VN')+' → hạn mới: '+q.due.toLocaleString('vi-VN')+')'); saveState(); closeModal(); renderAll(); notify('⏳ Đã gia hạn 24 giờ — không bị phạt.'); });
+  bind('mExt48', ()=>{ const oldDue=q.due; q.due=new Date(q.due.getTime()+48*3600000); q.status='new'; q.protected=true; logQ(q,'Quản lý gia hạn +48 giờ (hạn cũ: '+oldDue.toLocaleString('vi-VN')+' → hạn mới: '+q.due.toLocaleString('vi-VN')+')'); saveState(); closeModal(); renderAll(); notify('⏳ Đã gia hạn 48 giờ — không bị phạt.'); });
   bind('mConfirmPick', ()=>{
     const sel = document.getElementById('mPickEmp');
     const pickId = sel && sel.value;
     const pickName = (EMPLOYEES.find(e=>e.id===pickId)||{}).name||'';
-    if(mode==='resolve:reassign'){ logQ(q,'Quản lý chuyển nhiệm vụ cho '+pickName); if(pickId) q.owner = pickId; q.status='new'; q.protected=true; recomputeAll(); saveState(); closeModal(); renderAll(); notify('🔁 Đã chuyển nhiệm vụ — không bị phạt.'); }
-    else { logQ(q,'Quản lý thêm người hỗ trợ: '+pickName); q.helperId = pickId; q.status='new'; q.protected=true; saveState(); closeModal(); renderAll(); notify('🤝 Đã thêm người hỗ trợ — không bị phạt.'); }
+    if(mode==='resolve:reassign'){
+      const oldOwnerName = (EMPLOYEES.find(e=>e.id===q.owner)||{}).name||'';
+      logQ(q,'Quản lý chuyển nhiệm vụ: '+oldOwnerName+' → '+pickName);
+      if(pickId) q.owner = pickId; q.status='new'; q.protected=true; recomputeAll(); saveState(); closeModal(); renderAll(); notify('🔁 Đã chuyển nhiệm vụ — không bị phạt.');
+    } else {
+      logQ(q,'Quản lý thêm người hỗ trợ: '+pickName);
+      q.helperId = pickId; q.status='new'; q.protected=true; saveState(); closeModal(); renderAll(); notify('🤝 Đã thêm người hỗ trợ — không bị phạt.');
+    }
   });
   wireInteractive(card, {fromModal:true});
 }
@@ -1045,17 +1125,17 @@ function renderBadges(){
 }
 
 /* ---------------- manager: approvals ---------------- */
-// mục LIV "Quản lý cũng phải có Quest": duyệt báo cáo trong 4 giờ, quá hạn thì tính là Manager SLA breach
-const MANAGER_SLA_HOURS = 4;
+// mục LIV "Quản lý cũng phải có Quest": duyệt báo cáo trong N giờ (CONFIG.managerSlaHours, Admin đổi được), quá hạn thì tính là Manager SLA breach
 function renderApprovals(){
+  const slaH = CONFIG.managerSlaHours||DEFAULT_CONFIG.managerSlaHours;
   const pending = QUESTS.filter(q=>q.status==='submitted'||q.status==='support_requested');
-  const breached = pending.filter(q=> q.submittedAt && (NOW-q.submittedAt)/3600000 > MANAGER_SLA_HOURS);
-  document.getElementById('pendingCount').textContent = pending.length+' việc cần xử lý'+(breached.length?(' · ⚠️ '+breached.length+' quá SLA '+MANAGER_SLA_HOURS+'h'):'');
+  const breached = pending.filter(q=> q.submittedAt && (NOW-q.submittedAt)/3600000 > slaH);
+  document.getElementById('pendingCount').textContent = pending.length+' việc cần xử lý'+(breached.length?(' · ⚠️ '+breached.length+' quá SLA '+slaH+'h'):'');
   document.getElementById('approvalList').innerHTML = pending.length ? pending.map(q=>{
     const emp = EMPLOYEES.find(e=>e.id===q.owner);
     const isSupport = q.status==='support_requested';
     const waitH = q.submittedAt ? (NOW-q.submittedAt)/3600000 : 0;
-    const slaBad = waitH > MANAGER_SLA_HOURS;
+    const slaBad = waitH > slaH;
     return '<div class="approverow"><div class="ai">'+
         '<button type="button" class="elink an" data-kind="quest" data-id="'+q.id+'" style="display:block;text-align:left">'+(isSupport?'🆘 ':'')+q.name+'</button>'+
         '<div class="am">'+(emp?('<button type="button" class="elink" data-kind="employee" data-id="'+emp.id+'">'+emp.name+'</button>'):'')+' · '+QTYPE[q.type].label+' · '+(isSupport?('xin hỗ trợ: "'+esc2(q.supportReason||'')+'"'):dueText(q))+
@@ -1086,7 +1166,6 @@ function renderTeam(){
   const assignBtn = document.getElementById('btnAssignQuest');
   if(assignBtn) assignBtn.addEventListener('click', ()=> openAssignQuestModal());
 }
-const QTYPE_RANGE = { daily:[5,20], routine:[20,50], assigned:[50,150], challenge:[150,500], boss:[500,5000] };
 function openAssignQuestModal(){
   currentModal = null; modalStack = [];
   renderAssignQuestBody({});
@@ -1096,7 +1175,7 @@ function renderAssignQuestBody(draft){
   const card = document.getElementById('modalCard');
   const assignees = EMPLOYEES.filter(e=>e.id!==MANAGER.id);
   const type = draft.type || 'assigned';
-  const range = QTYPE_RANGE[type];
+  const range = CONFIG.qtypeRange[type];
   const ownerId = draft.ownerId || assignees[0].id;
   const owner = EMPLOYEES.find(e=>e.id===ownerId);
   const overload = owner && owner.workload>=90;
@@ -1105,7 +1184,7 @@ function renderAssignQuestBody(draft){
     '<div class="modal-sub">Theo 5 loại nhiệm vụ của hệ thống, mỗi loại có khung điểm XP đề xuất riêng.</div>'+
     '<div class="modal-sub" style="margin-top:10px">Loại nhiệm vụ</div>'+
     '<select id="aqType" style="width:100%;background:var(--surface-2);border:1px solid var(--border);border-radius:10px;color:var(--text);padding:8px;margin-top:4px">'+
-      Object.keys(QTYPE).map(k=>'<option value="'+k+'"'+(k===type?' selected':'')+'>'+QTYPE[k].label+' ('+QTYPE_RANGE[k][0]+'–'+QTYPE_RANGE[k][1]+' XP)</option>').join('')+
+      Object.keys(QTYPE).map(k=>'<option value="'+k+'"'+(k===type?' selected':'')+'>'+QTYPE[k].label+' ('+CONFIG.qtypeRange[k][0]+'–'+CONFIG.qtypeRange[k][1]+' XP)</option>').join('')+
     '</select>'+
     '<div class="modal-sub" style="margin-top:10px">Tên nhiệm vụ</div>'+
     '<input id="aqName" type="text" value="'+(draft.name?esc2(draft.name):'')+'" placeholder="Ví dụ: Kiểm kê kho thuốc thú y" style="width:100%;background:var(--surface-2);border:1px solid var(--border);border-radius:10px;color:var(--text);padding:8px;margin-top:4px">'+
@@ -1130,8 +1209,8 @@ function renderAssignQuestBody(draft){
     const own = document.getElementById('aqOwner').value;
     const ty = document.getElementById('aqType').value;
     const hrs = parseInt(document.getElementById('aqDue').value,10);
-    let base = parseInt(document.getElementById('aqBase').value,10) || QTYPE_RANGE[ty][0];
-    base = Math.max(QTYPE_RANGE[ty][0], Math.min(QTYPE_RANGE[ty][1], base));
+    let base = parseInt(document.getElementById('aqBase').value,10) || CONFIG.qtypeRange[ty][0];
+    base = Math.max(CONFIG.qtypeRange[ty][0], Math.min(CONFIG.qtypeRange[ty][1], base));
     if(!nm){ toast('⚠️ Nhập tên nhiệm vụ trước đã.'); return; }
     addQuest({ type:ty, name:nm, owner:own, base, due:hoursFromNow(hrs), from:MANAGER.id });
     recomputeAll(); saveState(); closeModal(); renderAll();
@@ -1234,6 +1313,49 @@ function loadState(){
   }catch(e){ return false; }
 }
 
+/* ---------------- mục XLI/LVII: Admin Rule Engine — Ban giám đốc đổi chính sách KHÔNG cần sửa code ---------------- */
+function openAdminModal(){
+  const overlay = document.getElementById('modalOverlay');
+  const card = document.getElementById('modalCard');
+  currentModal = null; modalStack = [];
+  const c = CONFIG;
+  function num(id,val,step){ return '<input id="'+id+'" type="number" step="'+(step||1)+'" value="'+val+'" style="width:72px;background:var(--surface-2);border:1px solid var(--border);border-radius:8px;color:var(--text);padding:6px;font-size:12px">'; }
+  const comboRows = c.comboTiers.map((t,i)=>'<div style="display:flex;gap:8px;align-items:center;margin-bottom:4px"><span style="width:110px;font-size:11.5px;color:var(--text-muted)">Từ '+t.n+' Quest liên tục</span><span style="font-size:11px">×</span>'+num('cfgComboM'+i,t.m,0.01)+'</div>').join('');
+  const lateRows = c.latePenalty.map((t,i)=>'<div style="display:flex;gap:8px;align-items:center;margin-bottom:4px"><span style="width:110px;font-size:11.5px;color:var(--text-muted)">Trễ ≥ '+t.h+' giờ</span><span style="font-size:11px">−</span>'+num('cfgLateP'+i,t.p,1)+'<span style="font-size:11px;color:var(--text-muted)">điểm</span></div>').join('');
+  const qtypeRows = Object.keys(QTYPE).map(k=>'<div style="display:flex;gap:8px;align-items:center;margin-bottom:4px"><span style="width:110px;font-size:11.5px;color:var(--text-muted)">'+QTYPE[k].label+'</span>'+num('cfgQR_'+k+'_0', c.qtypeRange[k][0])+'<span>–</span>'+num('cfgQR_'+k+'_1', c.qtypeRange[k][1])+'</div>').join('');
+  card.innerHTML = '<h3>⚙️ Cấu hình hệ thống (Rule Engine)</h3>'+
+    '<div class="modal-sub">Mục XLI/LVII tài liệu: Ban lãnh đạo đổi được chính sách mà KHÔNG cần lập trình lại. Đổi số dưới đây rồi bấm Lưu — áp dụng ngay cho toàn hệ thống.</div>'+
+    '<div class="modal-sub" style="font-weight:700;margin-top:10px;margin-bottom:4px">🔥 Hệ số Combo (đúng hạn liên tục)</div>'+comboRows+
+    '<div class="modal-sub" style="font-weight:700;margin-top:10px;margin-bottom:4px">⏳ Giảm thưởng theo % thời gian còn lại</div>'+
+      '<div style="display:flex;gap:8px;align-items:center;margin-bottom:4px"><span style="width:150px;font-size:11.5px;color:var(--text-muted)">Cảnh báo khi còn dưới (%)</span>'+num('cfgWarnFrac', Math.round(c.decay.warnFrac*100))+'<span style="font-size:11px">→ thưởng còn (%)</span>'+num('cfgWarnMult', Math.round(c.decay.warnMult*100))+'</div>'+
+      '<div style="display:flex;gap:8px;align-items:center;margin-bottom:4px"><span style="width:150px;font-size:11.5px;color:var(--text-muted)">Nguy cấp khi còn dưới (%)</span>'+num('cfgCritFrac', Math.round(c.decay.critFrac*100))+'<span style="font-size:11px">→ thưởng còn (%)</span>'+num('cfgCritMult', Math.round(c.decay.critMult*100))+'</div>'+
+    '<div class="modal-sub" style="font-weight:700;margin-top:10px;margin-bottom:4px">🔴 Mức phạt trễ hạn</div>'+lateRows+
+    '<div class="modal-sub" style="font-weight:700;margin-top:10px;margin-bottom:4px">⏱️ SLA quản lý duyệt báo cáo</div>'+
+      '<div style="display:flex;gap:8px;align-items:center"><span style="width:110px;font-size:11.5px;color:var(--text-muted)">Phải duyệt trong</span>'+num('cfgSla', c.managerSlaHours)+'<span style="font-size:11px;color:var(--text-muted)">giờ</span></div>'+
+    '<div class="modal-sub" style="font-weight:700;margin-top:10px;margin-bottom:4px">🎯 Khung điểm XP theo loại nhiệm vụ</div>'+qtypeRows+
+    '<div class="modal-actions"><button class="btn" id="mResetCfg">Khôi phục mặc định</button><button class="btn" id="mClose">Hủy</button><button class="btn primary" id="mSaveCfg">💾 Lưu & áp dụng</button></div>';
+  overlay.hidden = false;
+  document.getElementById('mClose').addEventListener('click', closeModal);
+  document.getElementById('mResetCfg').addEventListener('click', ()=>{
+    CONFIG = JSON.parse(JSON.stringify(DEFAULT_CONFIG)); saveConfig(); recomputeAll(); closeModal(); renderAll(); notify('⚙️ Đã khôi phục cấu hình mặc định.');
+  });
+  document.getElementById('mSaveCfg').addEventListener('click', ()=>{
+    const g = id => parseFloat(document.getElementById(id).value);
+    CONFIG.comboTiers = CONFIG.comboTiers.map((t,i)=>({ n:t.n, m: g('cfgComboM'+i)||t.m }));
+    CONFIG.decay = {
+      warnFrac:(g('cfgWarnFrac')||CONFIG.decay.warnFrac*100)/100, critFrac:(g('cfgCritFrac')||CONFIG.decay.critFrac*100)/100,
+      warnMult:(g('cfgWarnMult')||CONFIG.decay.warnMult*100)/100, critMult:(g('cfgCritMult')||CONFIG.decay.critMult*100)/100
+    };
+    CONFIG.latePenalty = CONFIG.latePenalty.map((t,i)=>({ h:t.h, p: g('cfgLateP'+i)||t.p }));
+    CONFIG.managerSlaHours = g('cfgSla')||CONFIG.managerSlaHours;
+    Object.keys(QTYPE).forEach(k=>{
+      CONFIG.qtypeRange[k] = [ Math.round(g('cfgQR_'+k+'_0')||CONFIG.qtypeRange[k][0]), Math.round(g('cfgQR_'+k+'_1')||CONFIG.qtypeRange[k][1]) ];
+    });
+    saveConfig(); recomputeAll(); closeModal(); renderAll();
+    notify('⚙️ Đã lưu cấu hình mới — áp dụng ngay, không cần sửa code.');
+  });
+}
+
 /* ---------------- mục XXXV: Dashboard Ban lãnh đạo — tổng công ty, drill-down Công ty → Phòng → Team → Nhân viên ---------------- */
 function renderCompanyDashboard(){
   const n = EMPLOYEES.length;
@@ -1246,6 +1368,7 @@ function renderCompanyDashboard(){
   const overduePct = Math.round(overdueCount/totalQ*100);
   function tile(l,v){ return '<div class="stile"><div class="l">'+l+'</div><div class="v tabular">'+v+'</div></div>'; }
   document.getElementById('companyStats').innerHTML =
+    '<button class="btn" id="btnAdminCfg" style="margin-bottom:12px">⚙️ Cấu hình hệ thống (Rule Engine)</button>'+
     '<div class="statrow" style="grid-template-columns:repeat(4,1fr)">'+
       tile('🎯 KPI công ty', avg('kpi')+'%')+tile('⚔️ Power tổng', fmtNum(totalPower))+
       tile('✅ Hoàn thành', completedPct+'%')+tile('🔴 Quá hạn', overduePct+'%')+
@@ -1253,6 +1376,8 @@ function renderCompanyDashboard(){
     '<div class="statrow" style="grid-template-columns:repeat(3,1fr);margin-top:10px">'+
       tile('⚡ Đúng hạn TB', avg('onTime')+'%')+tile('🎯 Chất lượng TB', avg('quality')+'%')+tile('🟠 Đang chờ duyệt', pendingCount+' việc')+
     '</div>';
+  const btnAdmin = document.getElementById('btnAdminCfg');
+  if(btnAdmin) btnAdmin.addEventListener('click', openAdminModal);
 
   const byDept = DEPARTMENTS.map(d=>{
     const members = EMPLOYEES.filter(e=>e.dept===d);
@@ -1271,6 +1396,14 @@ function renderCompanyDashboard(){
   if(pendingCount) alerts.push('🟠 '+pendingCount+' báo cáo đang chờ duyệt');
   if(highLoad) alerts.push('🟡 '+highLoad+' nhân viên workload &gt;90%');
   if(lowKpiDept) alerts.push('🔴 '+lowKpiDept+' phòng có KPI &lt;70%');
+  // mục XLVI "Phát hiện bất thường": nhiệm vụ trùng tên (nghi chia nhỏ để cày điểm) + 1 lần duyệt cộng XP bất thường lớn
+  const dupGroups = {};
+  QUESTS.filter(q=>q.status!=='completed').forEach(q=>{ const k=q.owner+'|'+q.name; dupGroups[k]=(dupGroups[k]||0)+1; });
+  const dupCount = Object.values(dupGroups).filter(n=>n>=3).length;
+  if(dupCount) alerts.push('🟡 '+dupCount+' trường hợp nhiệm vụ trùng tên lặp lại ≥3 lần — nghi chia nhỏ việc để cày điểm');
+  let bigJump = 0;
+  EMPLOYEES.forEach(e=> e.history.forEach(h=>{ const typeMax = (CONFIG.qtypeRange[h.type]||[0,999999])[1]; if((h.xpGained||0) > typeMax*1.2) bigJump++; }));
+  if(bigJump) alerts.push('🟡 '+bigJump+' lượt cộng điểm vượt xa khung điểm loại nhiệm vụ — nên kiểm tra lại');
   document.getElementById('companyAlerts').innerHTML = alerts.length ? alerts.map(a=>'<div class="modal-sub" style="font-size:12.5px;margin-bottom:6px">'+a+'</div>').join('') : '<div class="empty">Không có cảnh báo nào 🎉</div>';
 
   const top5 = EMPLOYEES.slice(0,5);
@@ -1301,7 +1434,10 @@ function renderAll(){
   renderTeam();
 }
 
+loadConfig();
 loadState();
+genDailyQuestsForDate(todayStr());
+saveState();
 recomputeAll();
 syncViews();
 renderAll();
